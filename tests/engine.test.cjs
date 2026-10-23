@@ -160,3 +160,40 @@ test('testoff cancels only pending campaign jobs and cannot be used by other use
  command.message.from.id=3;command.message.chat.id=3;f.app.handle(f.db,f.cfg,command,'test');
  assert.equal(f.states.test247.active,false);assert.equal(f.tables.Reminders[0].status,'cancelled');assert.equal(f.tables.Reminders[1].status,'sent');
 });
+function resumable(){
+ const f=fixture();f.cfg.testEmployee={email:f.row.mailbox,telegramId:3};
+ Object.assign(f.row,{kind:'live',status:'no_reply_needed',closedAt:90000,closedBy:'3',closeReason:'employee_button'});
+ f.states.test247={id:'campaign',active:true,mailbox:f.row.mailbox,messageId:f.row.messageId,threadId:'t1',startedAt:50000,client:['client@example.com']};
+ f.ctx.wpTestResumeRequest=()=>({id:'resume-1',campaignId:'campaign',messageId:'m1',expectedStartedAt:50000});
+ f.api.gmail=()=>({messages:[{id:'m1',internalDate:'10',payload:{headers:[{name:'From',value:'client@example.com'}]},labelIds:['INBOX']}]});
+ return f;
+}
+test('owner test resume preserves original epoch and closure audit without duplicate cards',()=>{
+ const f=resumable();f.app.resumeTestRequest(f.db,f.cfg);f.app.resumeTestRequest(f.db,f.cfg);
+ assert.equal(f.row.status,'awaiting');assert.equal(f.row.closedAt,'');assert.equal(f.states.test247.startedAt,50000);
+ assert.equal(f.states['testResume:resume-1'].previousStatus,'no_reply_needed');assert.equal(f.states['testResume:resume-1'].previousClosedAt,90000);
+ assert.equal(f.tables.Reminders.length,2);assert.ok(f.tables.Reminders.every(r=>r.stage==='resume' && r.recipient==='3'));
+});
+test('resume never reopens a message with an actual sent reply',()=>{
+ const f=resumable(),get=f.api.gmail;
+ f.api.gmail=()=>({messages:get().messages.concat([{id:'out',internalDate:'20',labelIds:['SENT'],payload:{headers:[{name:'To',value:'client@example.com'}]}}])});
+ assert.throws(()=>f.app.resumeTestRequest(f.db,f.cfg),/TEST_RESUME_ALREADY_REPLIED/);
+ assert.equal(f.row.status,'no_reply_needed');assert.equal(f.tables.Reminders.length,0);
+});
+test('resume restores only cancelled unsent SLA jobs and retains all already sent jobs',()=>{
+ const f=resumable();
+ f.tables.Reminders.push({id:'x:campaign-campaign:view-employee',emailId:f.row.id,stage:30,mode:'test',status:'cancelled'},
+  {id:'y:campaign-campaign:view-admin',emailId:f.row.id,stage:30,mode:'test',status:'sent',sentAt:70000});
+ f.app.resumeTestRequest(f.db,f.cfg);assert.equal(f.tables.Reminders[0].status,'pending');assert.equal(f.tables.Reminders[1].status,'sent');
+ assert.equal(f.tables.Reminders[1].sentAt,70000);assert.equal(f.states.test247.startedAt,50000);
+});
+test('resume rejects a request that would change the campaign or its start time',()=>{
+ const f=resumable();f.ctx.wpTestResumeRequest=()=>({id:'resume-1',campaignId:'campaign',messageId:'m1',expectedStartedAt:60000});
+ assert.throws(()=>f.app.resumeTestRequest(f.db,f.cfg),/TEST_RESUME_SCOPE/);assert.equal(f.row.status,'no_reply_needed');
+});
+test('replayed old No Reply Needed callback cannot close an explicitly resumed test',()=>{
+ const f=resumable();f.states['callback:cb1']={at:90000};
+ f.app.queue(f.db,f.cfg,f.row,'initial','test');Object.assign(f.tables.Reminders[0],{status:'sent',telegramMessageId:50});
+ f.app.resumeTestRequest(f.db,f.cfg);f.app.handle(f.db,f.cfg,callback(f),'test');
+ assert.equal(f.row.status,'awaiting');assert.equal(f.states['callback:cb1'].at,90000);assert.equal(f.states.test247.startedAt,50000);
+});

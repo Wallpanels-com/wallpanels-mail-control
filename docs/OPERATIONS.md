@@ -30,6 +30,8 @@ Read observations and reply checks are recorded under `testEvidence:<email-row-i
 
 Send `/testoff` to the bot as the test administrator to disable the 24/7 clock, cancel its pending deliveries and restore the standard calendar. This does **not** enable production or employee notifications. The campaign epoch and delivery audit are retained. Keep the selected letter unanswered and do not press No Reply Needed until after the last stage if you want to observe all three intervals; use a subsequent incoming message to verify closure separately.
 
+An explicit owner request may restore a test expectation closed with No Reply Needed. The one-off private `TestResume.js` request is applied only after Telegram polling has processed pending callbacks. It checks the exact campaign and original epoch, rechecks Gmail for a reply, archives previous closure fields under `testResume:<operation-id>` and reopens that single row. Already sent deliveries and callback receipts are retained. Fresh Employee/Admin cards use a separate `resume` stage without consuming or resetting 30/60/120-minute stages. The private request is removed after acknowledgement; retries cannot reopen the row again.
+
 Bots cannot start private chats with users who have not pressed Start. Before a future approved production rollout, each employee and administrator must start the bot. A permanent Telegram rejection is recorded in `Reminders` and `Errors`; do not treat a successful test-admin delivery as proof of other recipients' availability.
 
 ## Pause and resume

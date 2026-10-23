@@ -25,6 +25,8 @@ if(command==='prepare') {
   else if(fs.existsSync(stage+'/Bootstrap.js')) fs.unlinkSync(stage+'/Bootstrap.js');
   if(process.argv.includes('--test-request')) fs.copyFileSync('.local/TestRequest.js',stage+'/TestRequest.js');
   else if(fs.existsSync(stage+'/TestRequest.js')) fs.unlinkSync(stage+'/TestRequest.js');
+  if(process.argv.includes('--test-resume')) fs.copyFileSync('.local/TestResume.js',stage+'/TestResume.js');
+  else if(fs.existsSync(stage+'/TestResume.js')) fs.unlinkSync(stage+'/TestResume.js');
   fs.writeFileSync('.clasp.json',JSON.stringify({...config,rootDir:stage},null,2)+'\n');
   const hash=crypto.createHash('sha256');
   for(const f of fs.readdirSync('src').sort()) hash.update(f+'\n'+fs.readFileSync(path.join('src',f),'utf8'));

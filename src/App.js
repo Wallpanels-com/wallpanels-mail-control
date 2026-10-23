@@ -275,7 +275,37 @@ var WpApp = (function () {
   function testTick() {
     if(typeof wpTestRequest!=='function' && PropertiesService.getScriptProperties().getProperty('WP_TEST247_ACTIVE')!=='yes') return;
     var c=config(),db=WpStore.open(c.sheetId);
-    if(db.setting('MODE')==='test') return monitor();
+    if(db.setting('MODE')==='test') {
+      if(typeof wpTestResumeRequest==='function') locked(function(){resumeTestRequest(WpStore.open(c.sheetId),c);});
+      return monitor();
+    }
+  }
+  function resumeTestRequest(db,c) {
+    if(typeof wpTestResumeRequest!=='function') return;
+    var req=wpTestResumeRequest(),state=db.state('test247');
+    if(db.setting('MODE')!=='test' || !state || !state.active || !c.testEmployee || state.mailbox!==c.testEmployee.email ||
+      state.id!==req.campaignId || state.messageId!==req.messageId || state.startedAt!==req.expectedStartedAt ||
+      !/^[a-z0-9-]{1,60}$/.test(req.id)) throw new Error('TEST_RESUME_SCOPE');
+    var key='testResume:'+req.id,receipt=db.state(key);
+    if(receipt && receipt.completedAt) return;
+    var row=db.all('Emails').find(function(r){return r.mailbox===state.mailbox && r.messageId===state.messageId;});
+    if(!row || ['awaiting','no_reply_needed'].indexOf(row.status)<0) throw new Error('TEST_RESUME_STATUS');
+    var thread=WpApi.gmail(c,state.mailbox,'threads/'+encodeURIComponent(state.threadId),{format:'metadata'});
+    var source=(thread.messages||[]).find(function(m){return m.id===state.messageId;});
+    if(!source || WpCore.replied(thread.messages,source)) throw new Error('TEST_RESUME_ALREADY_REPLIED');
+    if(!receipt) {
+      receipt={requestedAt:Date.now(),startedAt:state.startedAt,previousStatus:row.status,previousClosedAt:row.closedAt||'',
+        previousClosedBy:row.closedBy||'',previousCloseReason:row.closeReason||'',reason:'explicit_owner_test_resume'};
+      db.state(key,receipt); // Preserve the closure audit before clearing the active row's closure fields.
+    }
+    Object.assign(row,{status:'awaiting',closedAt:'',closedBy:'',closeReason:'',updatedAt:Date.now()});db.save('Emails',row);
+    db.all('Reminders').filter(function(r){return r.emailId===row.id && r.mode==='test' && r.status==='cancelled' &&
+      !r.sentAt && [30,60,120].indexOf(Number(r.stage))>=0 && r.id.indexOf(':campaign-'+state.id+':')>=0;})
+      .forEach(function(r){r.status='pending';db.save('Reminders',r);});
+    queue(db,c,row,'resume','test',req.id);
+    receipt.completedAt=Date.now();db.state(key,receipt);
+    console.log(JSON.stringify({test247:true,resumed:true,status:row.status,startedAt:state.startedAt,
+      previousStatus:receipt.previousStatus,dueAt:[30,60,120].map(function(m){return state.startedAt+m*60000;})}));
   }
   function handle(db,c,update,mode) {
     if(update.message && mode==='test' && c.testEmployee) {
@@ -396,11 +426,11 @@ var WpApp = (function () {
   });}
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
-    activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard};
+    activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}
-function wpTelegramUpdates() {var result=WpApp.updates();if(result.handled) console.log(JSON.stringify(result));WpApp.testTick();return result;}
+function wpTelegramUpdates() {var result=WpApp.updates();if(result.handled) console.log(JSON.stringify(result));if(result.ok) WpApp.testTick();return result;}
 function wpHealth() {var result=WpApp.health(); console.log(JSON.stringify({mode:result.mode,gmailOk:result.mailboxes.filter(function(m){return m.ok;}).length,
   gmailTotal:result.mailboxes.length,bot:result.bot,ai:result.ai,webhook:result.webhook}));return result;}
 function wpInstallTriggers() {return WpApp.installTriggers();}
