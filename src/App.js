@@ -168,6 +168,7 @@ var WpApp = (function () {
         var sent=WpApi.telegram(c.token,'sendMessage',{chat_id:String(job.recipient),text:text.slice(0,3500),
           reply_markup:keyboard(c,row,job.recipient,mode),link_preview_options:{is_disabled:true}});
         job.status='sent';job.sentAt=Date.now();job.telegramMessageId=sent.message_id;db.save('Reminders',job);
+        console.log(JSON.stringify({delivery:'sent',mode:mode,stage:job.stage,synthetic:row.kind==='synthetic',testAdmin:String(job.recipient)===String(c.testAdminId)}));
       } catch(e) {
         // Telegram has no idempotency key. Ambiguous sends must not be blindly repeated.
         job.status=e.code===429?'pending':(e.code>=400 && e.code<500?'failed':'unknown');
@@ -236,6 +237,7 @@ var WpApp = (function () {
     }
     ack(c,cb,row.status==='awaiting'?'Напоминание поставлено в очередь.':'Ожидание закрыто.');
     dispatch(db,c,mode);
+    console.log(JSON.stringify({callbackAction:match[1],status:row.status,synthetic:row.kind==='synthetic',mode:mode}));
   }
   function updates() {return locked(function(){
     var c=config(),db=WpStore.open(c.sheetId),mode=db.setting('MODE');
