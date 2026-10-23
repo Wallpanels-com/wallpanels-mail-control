@@ -10,7 +10,7 @@ function fixture(){
   const calls=[];let api={telegram:(token,method,payload)=>{calls.push({method,payload});return {message_id:50};},
     gmail:()=>({messages:[]}),analyze:()=>{throw Error('GROQ_HTTP_429');}};
   class Clock extends Date {static now(){return 100000;}}
-  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
+  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpTest:require('../src/TestCampaign.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
     module:{},CacheService:{},PropertiesService:{}});
   vm.runInContext(fs.readFileSync('src/App.js','utf8'),ctx);
   const row={id:'a'.repeat(20),status:'awaiting',kind:'synthetic',mailbox:'shared@example.org',messageId:'m1',threadId:'t1',receivedAt:Date.now(),subject:'test'};
@@ -116,4 +116,47 @@ test('test preview reserves only the approved test mailbox without consuming SLA
   f.app.handle(f.db,f.cfg,update,'test');f.app.handle(f.db,f.cfg,update,'test');
   assert.equal(f.tables.Reminders.length,1);assert.equal(f.tables.Reminders[0].stage,'preview');
   assert.equal(f.tables.Reminders[0].recipient,'3');assert.equal(f.tables.Reminders[0].status,'sent');
+});
+test('campaign creates exactly two role-specific deliveries only to test admin, including on retries',()=>{
+ const f=fixture();Object.assign(f.row,{kind:'live',receivedAt:1});
+ f.states.test247={id:'campaign',active:true,mailbox:f.row.mailbox,messageId:f.row.messageId,startedAt:1,client:['client@example.com']};
+ f.app.queue(f.db,f.cfg,f.row,30,'test');f.app.queue(f.db,f.cfg,f.row,30,'test');
+ assert.equal(f.tables.Reminders.length,2);assert.ok(f.tables.Reminders.every(r=>r.recipient==='3'));
+ assert.ok(f.tables.Reminders[0].id.includes('view-employee'));assert.ok(f.tables.Reminders[1].id.includes('view-admin'));
+ const emp=f.app.keyboard(f.cfg,f.row,3,'test','employee').inline_keyboard.flat();
+ const adm=f.app.keyboard(f.cfg,f.row,3,'test','admin').inline_keyboard.flat();
+ assert.deepEqual(Array.from(emp,b=>b.text),['Open Gmail','No Reply Needed']);
+ assert.ok(adm.some(b=>b.text==='Send Reminder'));assert.ok(!adm.some(b=>b.text==='No Reply Needed'));
+});
+test('campaign still checks actual Gmail reply before either notification',()=>{
+ const f=fixture();Object.assign(f.row,{kind:'live',receivedAt:1});
+ f.states.test247={id:'campaign',active:true,mailbox:f.row.mailbox,messageId:f.row.messageId,startedAt:1,client:['client@example.com']};
+ f.app.queue(f.db,f.cfg,f.row,30,'test');
+ f.api.gmail=()=>({messages:[{id:'m1',internalDate:'1',payload:{headers:[{name:'From',value:'client@example.com'}]}},
+   {id:'reply',internalDate:'2',labelIds:['SENT'],payload:{headers:[{name:'To',value:'client@example.com'}]}}]});
+ f.app.dispatch(f.db,f.cfg,'test');assert.equal(f.row.status,'replied');assert.equal(f.calls.length,0);
+ assert.ok(f.tables.Reminders.every(r=>r.status==='cancelled'));
+});
+test('one-off activation imports only selected historic message and never resets epoch',()=>{
+ const f=fixture();f.cfg.testEmployee={email:f.row.mailbox,telegramId:3};
+ const mid='1'.repeat(16);f.ctx.wpTestRequest=()=>({id:'campaign',mailbox:f.row.mailbox,messageId:mid,threadId:'thread'});
+ f.ctx.PropertiesService={getScriptProperties:()=>({setProperty:()=>{}})};
+ f.db.setting=()=> 'test';
+ f.api.gmail=()=>({messages:[{id:mid,internalDate:'10',labelIds:['INBOX'],payload:{headers:[{name:'From',value:'client@example.com'}]}},
+   {id:'2'.repeat(16),internalDate:'1',labelIds:['INBOX'],payload:{headers:[{name:'From',value:'client@example.com'}]}}]});
+ f.api.analyze=()=>({requires_reply:true,category:'customer',summary:'request',reason:'reply needed'});
+ f.app.activateTestRequest(f.db,f.cfg);const start=f.states.test247.startedAt;
+ f.app.activateTestRequest(f.db,f.cfg);
+ assert.equal(f.states.test247.startedAt,start);assert.equal(f.states.test247.initialized,true);
+ assert.equal(f.tables.Emails.filter(r=>r.kind==='live').length,1);
+ assert.equal(f.tables.Reminders.length,2);
+});
+test('testoff cancels only pending campaign jobs and cannot be used by other users',()=>{
+ const f=fixture();f.cfg.testEmployee={email:f.row.mailbox};f.states.test247={id:'campaign',active:true};
+ f.ctx.PropertiesService={getScriptProperties:()=>({deleteProperty:()=>{}})};
+ f.tables.Reminders.push({id:'x:campaign-campaign:view-employee',status:'pending'},{id:'sent:campaign-campaign:view-admin',status:'sent'});
+ const command={update_id:10,message:{date:100,from:{id:99},chat:{id:99,type:'private'},text:'/testoff'}};
+ f.app.handle(f.db,f.cfg,command,'test');assert.equal(f.states.test247.active,true);
+ command.message.from.id=3;command.message.chat.id=3;f.app.handle(f.db,f.cfg,command,'test');
+ assert.equal(f.states.test247.active,false);assert.equal(f.tables.Reminders[0].status,'cancelled');assert.equal(f.tables.Reminders[1].status,'sent');
 });

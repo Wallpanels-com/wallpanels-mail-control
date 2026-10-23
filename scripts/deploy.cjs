@@ -12,8 +12,9 @@ if(command==='prepare') {
     if(f==='appsscript.json') continue;
     if(fs.existsSync(path.join('src',f))) {
       const moduleName=path.basename(f,'.js');
-      const owned=['Api','App','Core','Store'].includes(moduleName) &&
-        fs.readFileSync(path.join('.local/remote-original',f),'utf8').includes('var Wp'+moduleName+' = (function () {');
+      const namespace=moduleName==='TestCampaign'?'Test':moduleName;
+      const owned=['Api','App','Core','Store','TestCampaign'].includes(moduleName) &&
+        fs.readFileSync(path.join('.local/remote-original',f),'utf8').includes('var Wp'+namespace+' = (function () {');
       if(!owned) throw Error('Original source collision: '+f);
       continue; // A fresh clone may already contain our reviewed runtime modules.
     }
@@ -22,6 +23,8 @@ if(command==='prepare') {
   for(const f of fs.readdirSync('src')) fs.copyFileSync(path.join('src',f),path.join(stage,f));
   if(process.argv.includes('--bootstrap')) fs.copyFileSync('.local/Bootstrap.js',stage+'/Bootstrap.js');
   else if(fs.existsSync(stage+'/Bootstrap.js')) fs.unlinkSync(stage+'/Bootstrap.js');
+  if(process.argv.includes('--test-request')) fs.copyFileSync('.local/TestRequest.js',stage+'/TestRequest.js');
+  else if(fs.existsSync(stage+'/TestRequest.js')) fs.unlinkSync(stage+'/TestRequest.js');
   fs.writeFileSync('.clasp.json',JSON.stringify({...config,rootDir:stage},null,2)+'\n');
   const hash=crypto.createHash('sha256');
   for(const f of fs.readdirSync('src').sort()) hash.update(f+'\n'+fs.readFileSync(path.join('src',f),'utf8'));

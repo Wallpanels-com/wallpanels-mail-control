@@ -6,6 +6,8 @@ Google Apps Script backend for Gmail response monitoring, Groq classification an
 
 The initial rollout is **test mode**. All notifications are routed to the configured test administrator. Production requires separate owner approval and the `WP_PRODUCTION_APPROVED=yes` Script Property, in addition to `Settings → MODE=production`. Never set these as part of a routine deployment.
 
+An explicitly activated temporary 24/7 test campaign can scope synchronization to the approved test mailbox and client. It maintains its own durable activation time and sends distinct Employee/Admin cards to the same test administrator. This deliberate two-card exception never changes production deduplication or the production calendar. See operations for `/testoff`.
+
 Runtime settings and staff details live in private Script Properties (`WP_CONFIG_JSON`) and the existing Google Sheet. `TELEGRAM_BOT_TOKEN` and `GROQ_API_KEY` remain in Script Properties. No employee roster, tokens or mail content belongs in this repository.
 
 An explicitly approved optional `testEmployee` can combine the test-admin and mailbox-owner roles. Its mailbox is an additional allowlisted address, and recipient IDs are deduplicated across roles. All other administrator mailboxes remain excluded.

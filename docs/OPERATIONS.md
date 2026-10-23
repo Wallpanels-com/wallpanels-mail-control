@@ -18,6 +18,18 @@ Open Gmail selects the mailbox using `authuser` and opens the thread. Employees 
 
 In test mode only, the approved test admin can send `/preview` in the private bot chat. It previews the newest live waiting message in that admin's explicitly approved test mailbox, once per message. This lets the owner check real Gmail links and buttons outside the work window without changing or marking the 30/60/120-minute SLA stages. Other staff mailboxes cannot be previewed with this command.
 
+## Temporary 24/7 test campaign
+
+A private, single-use activation request identifies one exact pre-existing Gmail message. It is deployed briefly as `TestRequest.js` and removed after acknowledgement. The existing minute polling trigger activates it and continues checking the test mailbox every minute; no additional trigger or OAuth grant is needed.
+
+`Sync_State/test247` stores the immutable activation epoch, selected message, allowed client, scope and status. Only that message is imported retrospectively. Subsequent incoming messages from that client after activation get independent cycles. Other mailbox synchronization is suspended during the active campaign. Gmail is read-only throughout.
+
+Initial Employee and Admin cards are sent separately, followed by separate cards at cumulative 30, 60 and 120 elapsed minutes. Role and campaign identifiers are part of each durable delivery key. Re-executions cannot reset the epoch or create duplicate reservations. Each send rechecks Gmail for a real reply. The selected historical message retains its original received time; the test timer uses the separate activation epoch. Future messages start at their own receipt time.
+
+Read observations and reply checks are recorded under `testEvidence:<email-row-id>`; deliveries and closure outcomes remain in Reminders and Emails. The owner must actually open Gmail, close an expectation or send a reply to validate those live interactions. A simulated clock test does not prove future real-time deliveries.
+
+Send `/testoff` to the bot as the test administrator to disable the 24/7 clock, cancel its pending deliveries and restore the standard calendar. This does **not** enable production or employee notifications. The campaign epoch and delivery audit are retained. Keep the selected letter unanswered and do not press No Reply Needed until after the last stage if you want to observe all three intervals; use a subsequent incoming message to verify closure separately.
+
 Bots cannot start private chats with users who have not pressed Start. Before a future approved production rollout, each employee and administrator must start the bot. A permanent Telegram rejection is recorded in `Reminders` and `Errors`; do not treat a successful test-admin delivery as proof of other recipients' availability.
 
 ## Pause and resume
