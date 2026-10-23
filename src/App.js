@@ -255,7 +255,8 @@ var WpApp = (function () {
     if(!db.setting('MODE')) db.setting('MODE','test','test / production / paused');
     c.employees.forEach(function(e){
       var old=db.all('Employees').find(function(r){return r.id===e.id;});
-      if(!old) db.save('Employees',Object.assign({enabled:true},e));
+      if(!old) db.save('Employees',Object.assign({enabled:true,role:e.role||'employee'},e));
+      else if(!old.role) {old.role=e.role||'employee';db.save('Employees',old);}
     });
     db.setting('TIMEZONE','America/New_York','Weekdays 09:00–19:00');
     db.setting('REMINDER_MINUTES','30,60,120','Business minutes; polling adds up to five minutes');

@@ -1,7 +1,7 @@
 var WpStore = (function () {
   'use strict';
   var schemas = {
-    Employees:['id','name','email','telegramId','username','enabled'],
+    Employees:['id','name','email','telegramId','username','enabled','role'],
     Emails:['id','key','kind','mailbox','messageId','threadId','sender','subject','receivedAt','status','aiStatus','category','summary','reason','closedAt','closedBy','closeReason','nextAiAt','aiAttempts','updatedAt'],
     Reminders:['id','emailId','stage','recipient','mode','status','attemptAt','sentAt','telegramMessageId','error','nextAttemptAt'],
     Sync_State:['key','value','updatedAt'],
@@ -58,6 +58,11 @@ var WpStore = (function () {
       if(!s) s=book.insertSheet(name);
       if(s.getLastRow()>0) {
         var headers=s.getRange(1,1,1,cols.length).getValues()[0];
+        // Append-only migration of our initial six-column roster; never replace user data.
+        if(name==='Employees' && s.getLastColumn()===6 && JSON.stringify(headers.slice(0,6))===JSON.stringify(cols.slice(0,6)) && !headers[6]) {
+          s.getRange(1,7).setValue('role').setFontWeight('bold').setBackground('#17365d').setFontColor('#ffffff');
+          return;
+        }
         if(JSON.stringify(headers)!==JSON.stringify(cols)) throw new Error('SCHEMA_MISMATCH:'+name);
         return; // Preserve existing data and formatting.
       }

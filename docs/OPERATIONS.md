@@ -5,7 +5,7 @@
 1. Authorize the existing project owner through official clasp. Keep OAuth tokens outside Git.
 2. Download and privately back up the existing script and manifest. Review any existing triggers or webhook before replacement; setup refuses an active webhook.
 3. Supply the approved private `WP_CONFIG_JSON` roster. Keep existing bot and Groq Script Properties unchanged. Never log property values.
-4. Run `wpSetup` (or first-run private `wpBootstrap`). Existing tabs with an incompatible schema cause an error rather than being overwritten. Empty or missing required tabs are initialized with headers, filters and frozen rows.
+4. Run `wpSetup` (or first-run private `wpBootstrap`). Existing tabs with an incompatible schema cause an error rather than being overwritten. The original six-column Employees schema supports one append-only `role` migration. Empty or missing required tabs are initialized with headers, filters and frozen rows.
 5. Run `wpHealth`: tests read-only access to all configured mailboxes, bot identity, webhook state and a synthetic Groq customer request. Detailed private results are stored as `Sync_State/health`.
 6. Run `wpMonitor` once to establish initial history baselines, with no historic backlog. The approved optional test-admin mailbox receives its own independent baseline.
 7. In test mode run `wpSyntheticTest`. This creates a synthetic expectation and sends a single interactive message only to the test admin. Check Send Reminder before No Reply Needed, then confirm the closure record and callback receipt in Sheets.
