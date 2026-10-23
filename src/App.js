@@ -209,7 +209,7 @@ var WpApp = (function () {
     }
     if(open.length) db.state('openRotation',(rotation+visited)%open.length);
     if(WpCore.isWorking(Date.now())) dispatch(db,c,mode);
-    db.state('monitorLastSuccess',Date.now());return {ok:true};
+    db.state('monitorLastSuccess',Date.now());return {ok:true,mode:mode,mailboxes:c.mailboxes.length,active:open.length};
   });}
   function handle(db,c,update,mode) {
     if(!update.callback_query) return;
@@ -248,7 +248,7 @@ var WpApp = (function () {
       catch(e){error(db,'telegram-update',e,String(list[i].update_id));return {retry:true};}
       db.state('telegramOffset',list[i].update_id+1);
     }
-    db.state('updatesLastSuccess',Date.now());return {ok:true};
+    db.state('updatesLastSuccess',Date.now());return {ok:true,handled:list.length};
   });}
   function setup() {return locked(function(){
     var c=config(),db=WpStore.initialize(c.sheetId);
@@ -262,7 +262,7 @@ var WpApp = (function () {
     var hook=WpApi.telegram(c.token,'getWebhookInfo');
     if(hook.url) throw new Error('EXISTING_WEBHOOK_REQUIRES_REVIEW');
     var bot=WpApi.telegram(c.token,'getMe');
-    db.state('botVerified',{id:bot.id,username:bot.username});return {ok:true,mode:db.setting('MODE')};
+    db.state('botVerified',{id:bot.id,username:bot.username});return {ok:true,mode:db.setting('MODE'),employees:c.employees.length,mailboxes:c.mailboxes.length};
   });}
   function health() {return locked(function(){
     var c=config(),db=WpStore.open(c.sheetId),report={mailboxes:[],mode:db.setting('MODE')};
@@ -290,17 +290,19 @@ var WpApp = (function () {
   function syntheticTest() {return locked(function(){
     var c=config(),db=WpStore.open(c.sheetId);
     if(db.setting('MODE')!=='test') throw new Error('TEST_MODE_REQUIRED');
-    var row={id:id(),key:'synthetic:'+id(),kind:'synthetic',mailbox:c.testEmployee?c.testEmployee.email:c.mailboxes[0],messageId:'synthetic',threadId:'synthetic',
+    var existing=db.state('syntheticTestId');
+    var row=db.all('Emails').find(function(r){return r.id===existing;}) || {id:id(),key:'synthetic:'+id(),kind:'synthetic',mailbox:c.testEmployee?c.testEmployee.email:c.mailboxes[0],messageId:'synthetic',threadId:'synthetic',
       sender:'client@example.com',subject:'Synthetic callback acceptance test',receivedAt:Date.now(),status:'awaiting',aiStatus:'complete',
       summary:'Синтетический тест. Нажмите No Reply Needed для проверки кнопки.',updatedAt:Date.now()};
-    db.save('Emails',row);queue(db,c,row,'test','test');dispatch(db,c,'test');db.state('syntheticTestId',row.id);return {id:row.id};
+    db.save('Emails',row);db.state('syntheticTestId',row.id);queue(db,c,row,'test','test');dispatch(db,c,'test');
+    return {id:row.id,delivered:db.all('Reminders').some(function(r){return r.emailId===row.id && r.stage==='test' && r.status==='sent';})};
   });}
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync};
 })();
 function wpSetup() {return WpApp.setup();}
-function wpMonitor() {return WpApp.monitor();}
-function wpTelegramUpdates() {return WpApp.updates();}
+function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}
+function wpTelegramUpdates() {var result=WpApp.updates();if(result.handled) console.log(JSON.stringify(result));return result;}
 function wpHealth() {var result=WpApp.health(); console.log(JSON.stringify({mode:result.mode,gmailOk:result.mailboxes.filter(function(m){return m.ok;}).length,
   gmailTotal:result.mailboxes.length,bot:result.bot,ai:result.ai,webhook:result.webhook}));return result;}
 function wpInstallTriggers() {return WpApp.installTriggers();}
@@ -312,8 +314,10 @@ function wpCommissionTest() {
   if(!report.bot || !report.ai || report.webhook || report.mailboxes.some(function(m){return !m.ok;})) throw new Error('HEALTH_GATE');
   wpMonitor();
   console.log(JSON.stringify({triggers:wpInstallTriggers().map(function(t){return t.handler;})}));
-  if(!db.state('syntheticTestId')) console.log(JSON.stringify({synthetic:wpSyntheticTest()}));
-  console.log('TEST_COMMISSIONED_ADMIN_ONLY');
+  var synthetic=wpSyntheticTest();
+  if(!synthetic.delivered) throw new Error('TEST_DELIVERY_NOT_CONFIRMED');
+  wpStatus();
+  console.log('TEST_READY_ADMIN_ONLY');
 }
 function wpStatus() {
   var c=WpApp.config(),db=WpStore.open(c.sheetId),testId=db.state('syntheticTestId');
