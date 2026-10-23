@@ -49,6 +49,8 @@ node scripts/deploy.cjs verify
 
 On first initialization only, `prepare --bootstrap` includes the private `.local/Bootstrap.js`; run `wpBootstrap` once in the editor, then prepare and push without that flag to remove bootstrap code from Apps Script HEAD. This never prints the saved API keys. The original downloaded files are preserved in the upload. The manifest retains the IAM, external-request and Sheets scopes and adds trigger-management permission.
 
+For a fresh maintenance checkout, download the current project into `.local/remote-original` and review differences first. The helper recognizes this project's four `Wp` modules so they can be updated; unknown name collisions fail instead of overwriting another file. Keep the original snapshot available for recovery.
+
 Do not use `clasp create`, publish a public web app, or change cloud projects. Time-driven triggers execute Apps Script HEAD, so a separate public web deployment is unnecessary. Keep a version snapshot and verify downloaded source against the Git commit after each update.
 
 ## Security and limits

@@ -10,7 +10,13 @@ if(command==='prepare') {
   // Never overwrite unknown files in an existing project: preserve all downloaded originals.
   for(const f of fs.readdirSync('.local/remote-original')) {
     if(f==='appsscript.json') continue;
-    if(fs.existsSync(path.join('src',f))) throw Error('Original source collision: '+f);
+    if(fs.existsSync(path.join('src',f))) {
+      const moduleName=path.basename(f,'.js');
+      const owned=['Api','App','Core','Store'].includes(moduleName) &&
+        fs.readFileSync(path.join('.local/remote-original',f),'utf8').includes('var Wp'+moduleName+' = (function () {');
+      if(!owned) throw Error('Original source collision: '+f);
+      continue; // A fresh clone may already contain our reviewed runtime modules.
+    }
     fs.copyFileSync(path.join('.local/remote-original',f),path.join(stage,f));
   }
   for(const f of fs.readdirSync('src')) fs.copyFileSync(path.join('src',f),path.join(stage,f));

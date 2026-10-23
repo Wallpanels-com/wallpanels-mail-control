@@ -162,6 +162,7 @@ var WpApp = (function () {
       }
       var elapsed=Math.floor(WpCore.businessMinutes(row.receivedAt,Date.now()));
       var text=(mode==='test'?'[TEST — только администратор]\n':'')+'WallPanels Mail Control\n'+row.mailbox+'\n'+
+        (job.stage==='preview'?'Предпросмотр: SLA-таймер не изменён.\n':'')+
         'Ожидание: '+elapsed+' рабочих мин. Этап: '+job.stage+'\nОт: '+row.sender+'\nТема: '+row.subject+'\n'+row.summary+'\n'+(row.reason||'');
       job.status='sending';job.attemptAt=Date.now();db.save('Reminders',job);
       try {
@@ -213,6 +214,22 @@ var WpApp = (function () {
     db.state('monitorLastSuccess',Date.now());return {ok:true,mode:mode,mailboxes:c.mailboxes.length,active:open.length};
   });}
   function handle(db,c,update,mode) {
+    if(update.message && mode==='test' && c.testEmployee) {
+      var message=update.message, commandKey='command:'+update.update_id;
+      if(message.chat.type==='private' && String(message.from.id)===String(c.testAdminId) &&
+        String(message.chat.id)===String(c.testAdminId) && /^\/preview(?:@\w+)?$/.test(message.text||'') &&
+        Date.now()-message.date*1000<900000 && !db.state(commandKey)) {
+        var latest=db.all('Emails').filter(function(r){return r.kind==='live' && r.status==='awaiting' && r.mailbox===c.testEmployee.email;})
+          .sort(function(a,b){return Number(b.receivedAt)-Number(a.receivedAt);})[0];
+        if(latest && current(db,c,latest)) {
+          queue(db,c,latest,'preview','test');db.state(commandKey,{at:Date.now()});dispatch(db,c,'test');
+        } else {
+          db.state(commandKey,{at:Date.now()});
+          WpApi.telegram(c.token,'sendMessage',{chat_id:String(c.testAdminId),text:'В тестовом ящике пока нет нового письма, ожидающего ответа. Мониторинг выполняется каждые 5 минут.'});
+        }
+      }
+      return;
+    }
     if(!update.callback_query) return;
     var cb=update.callback_query,user=String(cb.from.id), msg=cb.message;
     var match=/^([nr]):([a-f0-9]{20})$/.exec(cb.data||'');

@@ -102,3 +102,18 @@ test('approved admin test owner adds one mailbox without replacing seven employe
   assert.equal(actual.adminIds.join(','),'3,4');assert.ok(actual.mailboxes.includes('owner.test@wallpanels.com'));
   cfg.testEmployee.telegramId='4';assert.throws(()=>f.app.config(),/CONFIG_TEST_OWNER/);
 });
+test('test preview rejects another user and production mode',()=>{
+  const f=fixture();f.cfg.testEmployee={email:'shared@example.org'};
+  const update={update_id:1,message:{date:100,from:{id:99},chat:{id:99,type:'private'},text:'/preview'}};
+  f.app.handle(f.db,f.cfg,update,'test');assert.equal(f.calls.length,0);
+  update.message.from.id=3;update.message.chat.id=3;f.app.handle(f.db,f.cfg,update,'production');assert.equal(f.calls.length,0);
+});
+test('test preview reserves only the approved test mailbox without consuming SLA stages',()=>{
+  const f=fixture();f.cfg.testEmployee={email:'shared@example.org'};
+  Object.assign(f.row,{kind:'live',receivedAt:100});
+  f.api.gmail=()=>({messages:[{id:'m1',internalDate:'100',payload:{headers:[]},labelIds:['INBOX']}]});
+  const update={update_id:1,message:{date:100,from:{id:3},chat:{id:3,type:'private'},text:'/preview'}};
+  f.app.handle(f.db,f.cfg,update,'test');f.app.handle(f.db,f.cfg,update,'test');
+  assert.equal(f.tables.Reminders.length,1);assert.equal(f.tables.Reminders[0].stage,'preview');
+  assert.equal(f.tables.Reminders[0].recipient,'3');assert.equal(f.tables.Reminders[0].status,'sent');
+});

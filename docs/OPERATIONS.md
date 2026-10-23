@@ -16,6 +16,8 @@
 
 Open Gmail selects the mailbox using `authuser` and opens the thread. Employees can close one incoming message with No Reply Needed. Both owners of a shared mailbox can act on its expectations. Admin messages link to each owner separately and offer Send Reminder; delivery rechecks Gmail before notifying owners. In test mode every route is redirected to the test administrator.
 
+In test mode only, the approved test admin can send `/preview` in the private bot chat. It previews the newest live waiting message in that admin's explicitly approved test mailbox, once per message. This lets the owner check real Gmail links and buttons outside the work window without changing or marking the 30/60/120-minute SLA stages. Other staff mailboxes cannot be previewed with this command.
+
 Bots cannot start private chats with users who have not pressed Start. Before a future approved production rollout, each employee and administrator must start the bot. A permanent Telegram rejection is recorded in `Reminders` and `Errors`; do not treat a successful test-admin delivery as proof of other recipients' availability.
 
 ## Pause and resume
