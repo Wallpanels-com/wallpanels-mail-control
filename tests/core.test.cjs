@@ -60,6 +60,11 @@ test('PM recipients: two owners, each admin once; test routing only to test admi
 test('Gmail URL selects owner account and encodes thread',()=>{
   assert.equal(C.gmailUrl('user@example.com','abc'),'https://mail.google.com/mail/u/?authuser=user%40example.com#all/abc');
 });
+test('admin who owns a test mailbox receives only one notification',()=>{
+  const cfg={employees:[{email:'owner@example.org',telegramId:3}],adminIds:[3,4],testAdminId:3};
+  assert.deepEqual(C.recipients(cfg,'owner@example.org','production'),['3','4']);
+  assert.deepEqual(C.recipients(cfg,'owner@example.org','test'),['3']);
+});
 test('AI schema validation fails closed, bounded stored summaries',()=>{
   assert.throws(()=>C.normalizeAI({requires_reply:'false'}),/AI_SCHEMA/);
   assert.equal(C.normalizeAI({requires_reply:true,is_customer:true,category:'customer',summary:'a'.repeat(800),reason:'r'}).summary.length,500);

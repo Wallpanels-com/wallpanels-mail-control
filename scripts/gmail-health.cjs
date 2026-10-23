@@ -5,13 +5,13 @@ const {OAuth2Client}=require('google-auth-library');
 async function main(){
   let captured;
   const props={getProperty:()=>null,setProperty:(k,v)=>{if(k==='WP_CONFIG_JSON')captured=JSON.parse(v);}};
-  const ctx=vm.createContext({PropertiesService:{getScriptProperties:()=>props},WpApp:{setup:()=>({})},console:{log:()=>{}}});
+  const ctx=vm.createContext({PropertiesService:{getScriptProperties:()=>props},WpApp:{setup:()=>({})},wpCommissionTest:()=>{},console:{log:()=>{}}});
   vm.runInContext(fs.readFileSync('.local/Bootstrap.js','utf8'),ctx);ctx.wpBootstrap();
   if(captured.projectId!=='wallpanels-gmail-control')throw Error('Wrong project');
   const stored=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.clasprc.json'),'utf8')).tokens.default;
   const auth=new OAuth2Client(stored.client_id,stored.client_secret);auth.setCredentials(stored);
   const report=[];
-  for(const mailbox of new Set(captured.employees.map(e=>e.email))){
+  for(const mailbox of new Set(captured.employees.concat(captured.testEmployee?[captured.testEmployee]:[]).map(e=>e.email))){
     try{
       const now=Math.floor(Date.now()/1000);
       const signed=await auth.request({url:'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'+encodeURIComponent(captured.serviceAccount)+':signJwt',

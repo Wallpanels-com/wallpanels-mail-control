@@ -8,6 +8,8 @@ The initial rollout is **test mode**. All notifications are routed to the config
 
 Runtime settings and staff details live in private Script Properties (`WP_CONFIG_JSON`) and the existing Google Sheet. `TELEGRAM_BOT_TOKEN` and `GROQ_API_KEY` remain in Script Properties. No employee roster, tokens or mail content belongs in this repository.
 
+An explicitly approved optional `testEmployee` can combine the test-admin and mailbox-owner roles. Its mailbox is an additional allowlisted address, and recipient IDs are deduplicated across roles. All other administrator mailboxes remain excluded.
+
 ## Behaviour
 
 - One synchronization cursor per distinct mailbox; shared mailbox owners receive separate employee notifications and admins receive one each.

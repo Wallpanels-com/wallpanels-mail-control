@@ -92,3 +92,13 @@ test('expired callback acknowledgement does not poison the update pipeline',()=>
   f.api.telegram=()=>{throw Object.assign(Error('TELEGRAM_HTTP_400'),{code:400});};
   assert.doesNotThrow(()=>f.app.handle(f.db,f.cfg,callback(f),'test'));assert.equal(f.row.status,'no_reply_needed');
 });
+test('approved admin test owner adds one mailbox without replacing seven employees',()=>{
+  const f=fixture(), emails=['one','two','three','four','five','shared','shared'];
+  const cfg={projectId:'wallpanels-gmail-control',sheetId:'fake',serviceAccount:'test@wallpanels-gmail-control.iam.gserviceaccount.com',
+    employees:emails.map((s,i)=>({id:'e'+i,email:s+'@wallpanels.com',telegramId:String(10+i)})),adminIds:['3','4'],testAdminId:'3',
+    testEmployee:{id:'admin-test',email:'owner.test@wallpanels.com',telegramId:'3',role:'admin_test'}};
+  f.ctx.PropertiesService={getScriptProperties:()=>({getProperty:k=>k==='WP_CONFIG_JSON'?JSON.stringify(cfg):'FAKE'})};
+  const actual=f.app.config();assert.equal(actual.employees.length,8);assert.equal(actual.mailboxes.length,7);
+  assert.equal(actual.adminIds.join(','),'3,4');assert.ok(actual.mailboxes.includes('owner.test@wallpanels.com'));
+  cfg.testEmployee.telegramId='4';assert.throws(()=>f.app.config(),/CONFIG_TEST_OWNER/);
+});

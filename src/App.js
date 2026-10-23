@@ -8,9 +8,15 @@ var WpApp = (function () {
     if(c.projectId!=='wallpanels-gmail-control' || !c.sheetId || !c.serviceAccount ||
       !c.serviceAccount.endsWith('@wallpanels-gmail-control.iam.gserviceaccount.com')) throw new Error('CONFIG_SCOPE');
     if(!Array.isArray(c.employees) || c.employees.length!==7 || c.adminIds.length!==2) throw new Error('CONFIG_ROSTER');
+    var expectedMailboxCount=6;
+    if(c.testEmployee) {
+      if(c.testEmployee.role!=='admin_test' || String(c.testEmployee.telegramId)!==String(c.testAdminId) ||
+        c.employees.some(function(e){return e.email===c.testEmployee.email || e.id===c.testEmployee.id;})) throw new Error('CONFIG_TEST_OWNER');
+      c.employees=c.employees.concat([c.testEmployee]); expectedMailboxCount++;
+    }
     c.mailboxes=Array.from(new Set(c.employees.map(function(e){return e.email;})));
-    if(c.mailboxes.length!==6 || c.mailboxes.some(function(m){return !/^[a-z]+@wallpanels\.com$/.test(m);})) throw new Error('CONFIG_MAILBOXES');
-    if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id);});})) throw new Error('CONFIG_ADMIN_OVERLAP');
+    if(c.mailboxes.length!==expectedMailboxCount || c.mailboxes.some(function(m){return !/^[a-z][a-z0-9.]*@wallpanels\.com$/.test(m);})) throw new Error('CONFIG_MAILBOXES');
+    if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id) && e.role!=='admin_test';});})) throw new Error('CONFIG_ADMIN_OVERLAP');
     if(c.adminIds.map(String).indexOf(String(c.testAdminId))<0) throw new Error('CONFIG_TEST_ADMIN');
     c.token=p.getProperty('TELEGRAM_BOT_TOKEN'); c.groq=p.getProperty('GROQ_API_KEY');
     if(!c.token || !c.groq) throw new Error('SECRET_PROPERTY_MISSING');
@@ -126,7 +132,7 @@ var WpApp = (function () {
   function keyboard(c,row,recipient,mode) {
     var admin=c.adminIds.map(String).indexOf(String(recipient))>=0;
     var result=[[{text:'Open Gmail',url:WpCore.gmailUrl(row.mailbox,row.threadId)}]];
-    if(!admin || mode==='test') result.push([{text:'No Reply Needed',callback_data:'n:'+row.id}]);
+    if(!admin || WpCore.authorized(c,recipient,row.mailbox) || mode==='test') result.push([{text:'No Reply Needed',callback_data:'n:'+row.id}]);
     if(admin) {
       c.employees.filter(function(e){return e.email===row.mailbox;}).forEach(function(e){
         result.push([{text:'Chat with '+e.name,url:e.username?'https://t.me/'+e.username.replace(/^@/,''):'tg://user?id='+e.telegramId}]);
@@ -284,7 +290,7 @@ var WpApp = (function () {
   function syntheticTest() {return locked(function(){
     var c=config(),db=WpStore.open(c.sheetId);
     if(db.setting('MODE')!=='test') throw new Error('TEST_MODE_REQUIRED');
-    var row={id:id(),key:'synthetic:'+id(),kind:'synthetic',mailbox:c.mailboxes[0],messageId:'synthetic',threadId:'synthetic',
+    var row={id:id(),key:'synthetic:'+id(),kind:'synthetic',mailbox:c.testEmployee?c.testEmployee.email:c.mailboxes[0],messageId:'synthetic',threadId:'synthetic',
       sender:'client@example.com',subject:'Synthetic callback acceptance test',receivedAt:Date.now(),status:'awaiting',aiStatus:'complete',
       summary:'Синтетический тест. Нажмите No Reply Needed для проверки кнопки.',updatedAt:Date.now()};
     db.save('Emails',row);queue(db,c,row,'test','test');dispatch(db,c,'test');db.state('syntheticTestId',row.id);return {id:row.id};
