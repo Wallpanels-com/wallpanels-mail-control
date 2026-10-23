@@ -1,0 +1,14 @@
+{
+  "name": "wallpanels-mail-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Google Apps Script Gmail SLA monitoring and Telegram reminders",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check": "node scripts/check.cjs",
+    "deploy": "node scripts/deploy.cjs",
+    "clasp": "clasp"
+  },
+  "engines": {"node": ">=20"},
+  "devDependencies": {"@google/clasp": "3.4.1"}
+}

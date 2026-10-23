@@ -1,0 +1,13 @@
+node_modules/
+.local/
+.clasp.json
+.clasprc*.json
+.env*
+*.docx
+*.doc
+*.pem
+*.key
+*credentials*.json
+*client_secret*.json
+coverage/
+.DS_Store
