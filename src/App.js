@@ -166,6 +166,59 @@ var WpApp = (function () {
       });
     });
   }
+  function card(db,c,row,job,at) {
+    var testClock=WpTest.controls(db.state('test247'),row,job.mode),view=WpTest.view(job);
+    return {chat_id:String(job.recipient),parse_mode:'HTML',
+      text:WpMessages.render(row,job,{testClock:testClock,
+        elapsed:testClock?WpTest.minutes(db.state('test247'),row,at):WpCore.businessMinutes(row.receivedAt,at),
+        owner:c.employees.filter(function(e){return e.email===row.mailbox;}).map(function(e){return e.name;}).join(', '),
+        view:view||(c.adminIds.map(String).indexOf(String(job.recipient))>=0?'admin':'employee')}),
+      reply_markup:keyboard(c,row,job.recipient,job.mode,view),link_preview_options:{is_disabled:true}};
+  }
+  function refreshTestMessages(db,c) {
+    // A versioned snapshot edits existing test cards only; it never requeues deliveries or changes SLA clocks.
+    var campaign=db.state('test247');
+    if(db.setting('MODE')!=='test' || !campaign || !campaign.active || !c.testEmployee ||
+      campaign.mailbox!==c.testEmployee.email || String(c.testEmployee.telegramId)!==String(c.testAdminId)) return;
+    var key='messageFormat:'+WpMessages.version+':'+campaign.id,receipt=db.state(key);
+    if(receipt && receipt.completedAt) return;
+    var jobs=db.all('Reminders'),rows=db.all('Emails');
+    function scoped(job) {
+      var row=rows.find(function(r){return r.id===job.emailId;});
+      return job.mode==='test' && job.status==='sent' && job.telegramMessageId && String(job.recipient)===String(c.testAdminId) &&
+        job.id.indexOf(':campaign-'+campaign.id+':')>=0 && row && WpTest.controls(campaign,row,'test');
+    }
+    if(!receipt) {
+      receipt={requestedAt:Date.now(),jobs:jobs.filter(scoped).map(function(j){return j.id;}),results:{}};
+      db.state(key,receipt);
+    }
+    for(var i=0;i<receipt.jobs.length && budget();i++) {
+      var jobId=receipt.jobs[i],prior=receipt.results[jobId];
+      if(prior && (prior.done || prior.nextAttemptAt>Date.now())) continue;
+      var job=jobs.find(function(j){return j.id===jobId;});
+      if(!job || !scoped(job)) {receipt.results[jobId]={done:true,skipped:true};db.state(key,receipt);continue;}
+      var row=rows.find(function(r){return r.id===job.emailId;});
+      var payload=card(db,c,row,job,Number(job.sentAt||job.attemptAt||Date.now()));
+      payload.message_id=Number(job.telegramMessageId);
+      try {
+        WpApi.telegram(c.token,'editMessageText',payload);
+        receipt.results[jobId]={done:true,editedAt:Date.now()};
+      } catch(e) {
+        var attempts=(prior?prior.attempts:0)+1;
+        receipt.results[jobId]={done:attempts>=3 || (e.code>=400 && e.code<500 && e.code!==429),attempts:attempts,
+          error:e.code?'HTTP_'+e.code:'EDIT_UNKNOWN',nextAttemptAt:Date.now()+Math.max(60000,Number(e.retryAfter||60)*1000)};
+        error(db,'telegram-format',e,job.id);
+      }
+      db.state(key,receipt);
+    }
+    if(receipt.jobs.every(function(id){return receipt.results[id] && receipt.results[id].done;})) {
+      receipt.completedAt=Date.now();db.state(key,receipt);
+      console.log(JSON.stringify({formatVersion:WpMessages.version,
+        edited:receipt.jobs.filter(function(id){return receipt.results[id].editedAt;}).length,
+        editFailed:receipt.jobs.filter(function(id){return receipt.results[id].error;}).length,
+        test247:true,startedAt:campaign.startedAt}));
+    }
+  }
   function dispatch(db,c,mode) {
     var jobs=db.all('Reminders');
     for(var i=0;i<jobs.length && budget();i++) {
@@ -179,17 +232,10 @@ var WpApp = (function () {
       if(!row || !current(db,c,row) || (mode==='production' && row.kind==='synthetic')) {
         job.status='cancelled';db.save('Reminders',job);continue;
       }
-      var elapsed=Math.floor(testClock?WpTest.minutes(campaign,row,Date.now()):WpCore.businessMinutes(row.receivedAt,Date.now()));
-      var view=WpTest.view(job),owner=c.employees.filter(function(e){return e.email===row.mailbox;}).map(function(e){return e.name;}).join(', ');
-      var displayView=view||(c.adminIds.map(String).indexOf(String(job.recipient))>=0?'admin':'employee');
-      var text=(mode==='test'?'[TEST'+(testClock?' 24/7':'')+']\n':'')+'WallPanels Mail Control · '+(displayView==='employee'?'Employee':'Admin')+'\n'+
-        (displayView==='employee'?'Получатель: '+owner+'\n':'Employee: '+owner+'\nEmployee Email: '+row.mailbox+'\n')+
-        'Client / From: '+row.sender+'\nSubject: '+row.subject+'\nWaiting Time: '+elapsed+(testClock?' мин.':' рабочих мин.')+
-        '\nЭтап: '+job.stage+'\nAI Summary: '+row.summary+'\n'+(row.reason||'');
+      var view=WpTest.view(job),payload=card(db,c,row,job,Date.now());
       job.status='sending';job.attemptAt=Date.now();db.save('Reminders',job);
       try {
-        var sent=WpApi.telegram(c.token,'sendMessage',{chat_id:String(job.recipient),text:text.slice(0,3500),
-          reply_markup:keyboard(c,row,job.recipient,mode,view),link_preview_options:{is_disabled:true}});
+        var sent=WpApi.telegram(c.token,'sendMessage',payload);
         job.status='sent';job.sentAt=Date.now();job.telegramMessageId=sent.message_id;db.save('Reminders',job);
         console.log(JSON.stringify({delivery:'sent',mode:mode,stage:job.stage,view:view,synthetic:row.kind==='synthetic',testAdmin:String(job.recipient)===String(c.testAdminId)}));
       } catch(e) {
@@ -206,6 +252,7 @@ var WpApp = (function () {
     if(['test','production'].indexOf(mode)<0) return {paused:true};
     if(mode==='test') activateTestRequest(db,c);
     var campaign=mode==='test'?db.state('test247'):null;
+    if(mode==='test') refreshTestMessages(db,c);
     var monitored=campaign && campaign.active?[campaign.mailbox]:c.mailboxes;
     db.all('Reminders').filter(function(r){return r.status==='sending' && +r.attemptAt<Date.now()-360000;}).forEach(function(r){
       r.status='unknown';r.error='INTERRUPTED_SEND';db.save('Reminders',r);error(db,'outbox',new Error('DELIVERY_UNKNOWN'),r.id);
@@ -427,7 +474,8 @@ var WpApp = (function () {
   });}
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
-    activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest};
+    activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
+    refreshTestMessages:refreshTestMessages};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}

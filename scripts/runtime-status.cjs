@@ -9,7 +9,7 @@ async function main(){
   const since=new Date(Date.now()-60*60000).toISOString(),result=[];let pageToken;
   const allowed=['ok','mode','employees','mailboxes','gmailOk','gmailTotal','bot','ai','webhook','triggers','health',
     'monitoredMailboxes','syntheticStatus','deliveries','unsafeRecipients','monitorLastSuccess','updatesLastSuccess','errorCount',
-    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus'];
+    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed'];
   do{
     const response=await auth.request({url:'https://logging.googleapis.com/v2/entries:list',method:'POST',data:{
       resourceNames:['projects/'+cfg.projectId],filter:'timestamp >= "'+since+'"',orderBy:'timestamp desc',pageSize:100,pageToken}});

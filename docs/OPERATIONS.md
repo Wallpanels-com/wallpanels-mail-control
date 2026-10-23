@@ -18,6 +18,10 @@ Open Gmail selects the mailbox using `authuser` and opens the thread. Employees 
 
 In test mode only, the approved test admin can send `/preview` in the private bot chat. It previews the newest live waiting message in that admin's explicitly approved test mailbox, once per message. This lets the owner check real Gmail links and buttons outside the work window without changing or marking the 30/60/120-minute SLA stages. Other staff mailboxes cannot be previewed with this command.
 
+Notification cards use Telegram HTML with bold labels, emoji landmarks and blank lines separating ownership, sender/subject, timing and AI analysis. Untrusted mail and model values are length-bounded before HTML escaping; final markup is never sliced. Employee and Admin cards retain their separate button sets.
+
+The owner-authorized `cards-v1` refresh takes a one-time snapshot of already-sent cards in the active test campaign and edits them in place, only in the approved test administrator's chat. Results are retained in `Sync_State/messageFormat:<version>:<campaign>`. It preserves original send-time waiting values, buttons, delivery records, closure state and activation epoch. Failed edits never trigger a replacement send. The refresh does not run in production; newly sent cards already use the current formatter.
+
 ## Temporary 24/7 test campaign
 
 A private, single-use activation request identifies one exact pre-existing Gmail message. It is deployed briefly as `TestRequest.js` and removed after acknowledgement. The existing minute polling trigger activates it and continues checking the test mailbox every minute; no additional trigger or OAuth grant is needed.

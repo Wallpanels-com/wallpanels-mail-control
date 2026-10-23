@@ -6,7 +6,7 @@ Date: 24 October 2026 (Europe/Kyiv). Rollout: **administrator-only test**, not a
 
 | Check | Evidence |
 | --- | --- |
-| Local critical logic | 45 Node tests pass; syntax/manifest check passes, including temporary 24/7 schedule isolation, two-role delivery and idempotent owner-authorized test restoration |
+| Local critical logic | 52 Node tests pass; syntax/manifest check passes, including temporary 24/7 schedule isolation, two-role delivery, idempotent test restoration, safe structured HTML cards and scoped in-place message edits |
 | Existing Gmail delegation | Live read-only profile checks pass for all seven approved mailboxes, including the optional test owner |
 | Apps Script Gmail access | Runtime health records `gmailOk=7`, `gmailTotal=7` using existing IAM/DWD |
 | Groq | Synthetic customer request classified correctly by `openai/gpt-oss-20b`; runtime Script Properties verified |
@@ -25,6 +25,8 @@ The test administrator is checking Send Reminder and No Reply Needed and prepari
 Update: the existing live test message was found and the separate 24/7 campaign activated on 24 October at 01:56:23 Europe/Kyiv. Gmail → Groq → Sheets processing succeeded; both initial Employee/Admin deliveries were confirmed to the test administrator. The cumulative stages are due at 02:26:23, 02:56:23 and 03:56:23 Europe/Kyiv, subject to minute-trigger scheduling. Future interval deliveries remain pending until observed; these timestamps are expectations, not a claim that all stages have already run. Production weekdays and timezone rules are unchanged.
 
 Live button update: the owner confirmed Open Gmail navigated to the correct letter; read-only Gmail metadata subsequently confirmed that it was read. Send Reminder delivered an extra Employee card at 02:04:25 Europe/Kyiv. No Reply Needed then closed the expectation at 02:04:28; subsequent monitoring observed the closed status. At the owner's explicit request, the expectation was restored at 02:07:25, preserving the original activation epoch and closure audit. Fresh Employee/Admin cards were both delivered by 02:07:32. Scheduled 30/60/120 stages were not consumed or shifted by the restoration. A real sent reply and a subsequent incoming cycle still require live observation.
+
+Card presentation update: at 02:15:32 Europe/Kyiv, the runtime confirmed five successful `editMessageText` operations and zero edit failures for the active test campaign (`cards-v1`). These updated the existing initial, manual and restored role cards in place, preserving their keyboards and historical send-time waiting values. The next monitor still recorded the expectation as `awaiting` with the original activation epoch and no numeric SLA stages consumed. All future reminders use the same structured HTML formatter. Downloaded Apps Script HEAD matches the updated sources.
 
 No employee or second-administrator notification has been sent as part of testing. Those routes are covered by synthetic routing tests only and intentionally await separate owner permission. Production remains disabled.
 

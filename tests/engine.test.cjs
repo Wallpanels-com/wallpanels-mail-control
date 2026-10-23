@@ -10,7 +10,7 @@ function fixture(){
   const calls=[];let api={telegram:(token,method,payload)=>{calls.push({method,payload});return {message_id:50};},
     gmail:()=>({messages:[]}),analyze:()=>{throw Error('GROQ_HTTP_429');}};
   class Clock extends Date {static now(){return 100000;}}
-  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpTest:require('../src/TestCampaign.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
+  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpTest:require('../src/TestCampaign.js'),WpMessages:require('../src/Messages.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
     module:{},CacheService:{},PropertiesService:{}});
   vm.runInContext(fs.readFileSync('src/App.js','utf8'),ctx);
   const row={id:'a'.repeat(20),status:'awaiting',kind:'synthetic',mailbox:'shared@example.org',messageId:'m1',threadId:'t1',receivedAt:Date.now(),subject:'test'};
@@ -196,4 +196,32 @@ test('replayed old No Reply Needed callback cannot close an explicitly resumed t
  f.app.queue(f.db,f.cfg,f.row,'initial','test');Object.assign(f.tables.Reminders[0],{status:'sent',telegramMessageId:50});
  f.app.resumeTestRequest(f.db,f.cfg);f.app.handle(f.db,f.cfg,callback(f),'test');
  assert.equal(f.row.status,'awaiting');assert.equal(f.states['callback:cb1'].at,90000);assert.equal(f.states.test247.startedAt,50000);
+});
+test('format refresh edits both existing role cards once, preserving delivery ledger, buttons and epoch',()=>{
+ const f=resumable();f.row.status='awaiting';f.app.queue(f.db,f.cfg,f.row,'initial','test');
+ f.tables.Reminders.forEach((j,i)=>Object.assign(j,{status:'sent',sentAt:60000,telegramMessageId:50+i}));
+ const before=JSON.stringify(f.tables.Reminders);
+ f.app.refreshTestMessages(f.db,f.cfg);f.app.refreshTestMessages(f.db,f.cfg);
+ assert.equal(f.calls.length,2);assert.ok(f.calls.every(c=>c.method==='editMessageText' && c.payload.chat_id==='3' && c.payload.parse_mode==='HTML'));
+ assert.ok(f.calls[0].payload.text.includes('👤 Employee'));assert.ok(f.calls[1].payload.text.includes('🛡 Admin'));
+ assert.ok(f.calls[0].payload.text.includes('0 мин.')); // Historical wait at sentAt, not at edit time.
+ assert.ok(f.calls[0].payload.reply_markup.inline_keyboard.flat().some(b=>b.text==='No Reply Needed'));
+ assert.equal(JSON.stringify(f.tables.Reminders),before);assert.equal(f.states.test247.startedAt,50000);
+ f.tables.Reminders.push({...f.tables.Reminders[0],id:'future:campaign-campaign:view-employee',telegramMessageId:99});
+ f.app.refreshTestMessages(f.db,f.cfg);assert.equal(f.calls.length,2);
+});
+test('format refresh never edits production, other recipients, campaigns or mailboxes',()=>{
+ const f=resumable();f.app.queue(f.db,f.cfg,f.row,'initial','test');
+ const original={...f.tables.Reminders[0],status:'sent',sentAt:60000,telegramMessageId:50};
+ f.tables.Reminders.splice(0,f.tables.Reminders.length,
+  {...original,mode:'production'}, {...original,recipient:'4'}, {...original,id:'other:campaign-other:view-employee'});
+ f.app.refreshTestMessages(f.db,f.cfg);assert.equal(f.calls.length,0);
+});
+test('failed message edit never resends a notification or changes the SLA clock',()=>{
+ const f=resumable();f.app.queue(f.db,f.cfg,f.row,'initial','test');
+ f.tables.Reminders.forEach(j=>Object.assign(j,{status:'sent',sentAt:60000,telegramMessageId:50}));
+ f.api.telegram=()=>{const e=Error('TELEGRAM_HTTP_400');e.code=400;throw e;};
+ f.app.refreshTestMessages(f.db,f.cfg);f.app.refreshTestMessages(f.db,f.cfg);
+ assert.equal(f.tables.Errors.length,2);assert.equal(f.tables.Reminders.length,2);
+ assert.ok(f.tables.Reminders.every(j=>j.status==='sent' && j.sentAt===60000));assert.equal(f.states.test247.startedAt,50000);
 });

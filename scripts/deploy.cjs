@@ -13,7 +13,7 @@ if(command==='prepare') {
     if(fs.existsSync(path.join('src',f))) {
       const moduleName=path.basename(f,'.js');
       const namespace=moduleName==='TestCampaign'?'Test':moduleName;
-      const owned=['Api','App','Core','Store','TestCampaign'].includes(moduleName) &&
+      const owned=['Api','App','Core','Store','TestCampaign','Messages'].includes(moduleName) &&
         fs.readFileSync(path.join('.local/remote-original',f),'utf8').includes('var Wp'+namespace+' = (function () {');
       if(!owned) throw Error('Original source collision: '+f);
       continue; // A fresh clone may already contain our reviewed runtime modules.
