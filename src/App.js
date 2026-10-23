@@ -281,6 +281,7 @@ var WpApp = (function () {
     }
   }
   function resumeTestRequest(db,c) {
+    // The durable receipt prevents a completed one-off restoration from reopening later closures.
     if(typeof wpTestResumeRequest!=='function') return;
     var req=wpTestResumeRequest(),state=db.state('test247');
     if(db.setting('MODE')!=='test' || !state || !state.active || !c.testEmployee || state.mailbox!==c.testEmployee.email ||
