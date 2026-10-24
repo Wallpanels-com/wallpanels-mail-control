@@ -133,6 +133,7 @@ var WpApp = (function () {
     catch(e) {if(e.code===404) {close(db,row,'unavailable','system','gmail_deleted');return false;} throw e;}
     var source=(thread.messages||[]).find(function(m){return m.id===row.messageId;});
     if(!source) {close(db,row,'unavailable','system','message_missing'); return false;}
+    if(!WpCore.incoming(source,[row.mailbox])) {close(db,row,'not_required','system','gmail_excluded');return false;}
     var hasReply=WpCore.replied(thread.messages||[],source),campaign=db.state('test247');
     if(db.setting('MODE')==='test' && WpTest.controls(campaign,row,'test')) {
       var prior=db.state('testEvidence:'+row.id)||{};
@@ -323,6 +324,7 @@ var WpApp = (function () {
     if(typeof wpTestRequest!=='function' && PropertiesService.getScriptProperties().getProperty('WP_TEST247_ACTIVE')!=='yes') return;
     var c=config(),db=WpStore.open(c.sheetId);
     if(db.setting('MODE')==='test') {
+      if(typeof wpAcceptanceRequest==='function') wpAcceptanceRequest();
       if(typeof wpTestResumeRequest==='function') locked(function(){resumeTestRequest(WpStore.open(c.sheetId),c);});
       return monitor();
     }
@@ -394,20 +396,22 @@ var WpApp = (function () {
     var proof=db.all('Reminders').some(function(r){return r.emailId===match[2] && String(r.recipient)===user &&
       String(r.telegramMessageId)===String(msg.message_id) && r.status==='sent' && r.mode===mode;});
     var allowed=row && proof && (mode==='test'?user===String(c.testAdminId):(admin || WpCore.authorized(c,user,row.mailbox)));
-    if(!allowed) {ack(c,cb,'Нет доступа.');return;}
+    var actionAllowed=row && (match[1]==='r'?admin:(WpCore.authorized(c,user,row.mailbox) || (mode==='test' && user===String(c.testAdminId))));
+    if(!allowed || !actionAllowed) {ack(c,cb,'Нет доступа.');return;}
+    var acknowledgement='Ожидание закрыто.';
     if(!db.state('callback:'+cb.id)) {
       if(match[1]==='n') {
-        if(!WpCore.authorized(c,user,row.mailbox) && !(mode==='test' && user===String(c.testAdminId))) return;
         if(row.status==='awaiting') close(db,row,'no_reply_needed',user,'employee_button');
       } else if(admin && current(db,c,row)) {
         var last=db.state('manual:'+row.id)||0;
-        if(Date.now()-last>300000) {
+        if(!last || Date.now()-last>=300000) {
           queue(db,c,row,'manual',mode,cb.id,true);db.state('manual:'+row.id,Date.now());
-        }
+          acknowledgement='Напоминание поставлено в очередь.';
+        } else acknowledgement='Ручное напоминание уже запрошено. Повторите через '+Math.ceil((300000-(Date.now()-last))/60000)+' мин.';
       }
       db.state('callback:'+cb.id,{at:Date.now()});
-    }
-    ack(c,cb,row.status==='awaiting'?'Напоминание поставлено в очередь.':'Ожидание закрыто.');
+    } else acknowledgement='Это действие уже обработано.';
+    ack(c,cb,acknowledgement);
     dispatch(db,c,mode);
     console.log(JSON.stringify({callbackAction:match[1],status:row.status,synthetic:row.kind==='synthetic',mode:mode}));
   }
@@ -472,7 +476,16 @@ var WpApp = (function () {
     db.save('Emails',row);db.state('syntheticTestId',row.id);queue(db,c,row,'test','test');dispatch(db,c,'test');
     return {id:row.id,delivered:db.all('Reminders').some(function(r){return r.emailId===row.id && r.stage==='test' && r.status==='sent';})};
   });}
-  return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,
+  function acceptanceAudit(operationId) {return locked(function(){
+    if(!/^[a-z0-9-]{1,60}$/.test(operationId)) throw new Error('AUDIT_OPERATION_ID');
+    var c=config(),db=WpStore.open(c.sheetId),key='acceptanceAudit:'+operationId;
+    if(db.setting('MODE')!=='test') throw new Error('TEST_MODE_REQUIRED');
+    var existing=db.state(key);if(existing) return existing;
+    var report=WpAudit.build(db,c,Date.now(),ScriptApp.getProjectTriggers(),
+      PropertiesService.getScriptProperties().getProperty('WP_PRODUCTION_APPROVED')==='yes');
+    db.state(key,report);console.log(JSON.stringify({acceptanceAudit:report}));return report;
+  });}
+  return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
     refreshTestMessages:refreshTestMessages};

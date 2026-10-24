@@ -2,6 +2,8 @@
 
 `Core.js` provides deterministic business-time calculation, routing, reply detection, AI validation and Gmail links. `Api.js` implements keyless delegated Gmail access, bounded Groq calls and the Telegram API. `Store.js` owns named sheet schemas and sequential writes. `App.js` coordinates synchronization, expectation state, delivery reservations, callbacks and trigger setup.
 
+`TestCampaign.js` isolates the approved elapsed-time test from the production calendar. `Messages.js` renders bounded, escaped Telegram HTML. `Audit.js` reconciles operational evidence without exposing mail text, addresses or recipient IDs; a one-time acceptance operation stores its report in Sync_State without changing monitoring or delivery state.
+
 ## Persistence
 
 | Sheet | Purpose |

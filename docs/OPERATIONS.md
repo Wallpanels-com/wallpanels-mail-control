@@ -16,6 +16,8 @@
 
 Open Gmail selects the mailbox using `authuser` and opens the thread. Employees can close one incoming message with No Reply Needed. Both owners of a shared mailbox can act on its expectations. Admin messages link to each owner separately and offer Send Reminder; delivery rechecks Gmail before notifying owners. In test mode every route is redirected to the test administrator.
 
+Send Reminder creates one additional employee notification without resetting or consuming SLA stages. The same letter has a five-minute request cooldown. Acknowledgements distinguish queued requests, cooldown and replay; successful delivery is recorded only after Telegram confirms it.
+
 In test mode only, the approved test admin can send `/preview` in the private bot chat. It previews the newest live waiting message in that admin's explicitly approved test mailbox, once per message. This lets the owner check real Gmail links and buttons outside the work window without changing or marking the 30/60/120-minute SLA stages. Other staff mailboxes cannot be previewed with this command.
 
 Notification cards use Telegram HTML with bold labels, emoji landmarks and blank lines separating ownership, sender/subject, timing and AI analysis. Untrusted mail and model values are length-bounded before HTML escaping; final markup is never sliced. Employee and Admin cards retain their separate button sets.
@@ -57,3 +59,7 @@ Run tests, inspect the diff, prepare a private upload stage, push only to the ap
 ## Test evidence
 
 Local unit tests cover timing, DST, routing, inbound identity, reply/draft/read semantics, callback authorization/replay, per-message closure and initial baselines. Mocks prove logic, not live API availability. Record live API results separately in the deployment report. Do not report employee or second-admin delivery until explicitly approved and observed.
+
+`runtime-status.cjs` defaults to the last hour. Use `--since=<ISO> --until=<ISO> --max=1000` for a historical test window, or `--hours=24 --max=3000`. Output is counters-only, includes sanitized execution-failure flags and never dumps raw exceptions. `invalid_rapt` on local clasp needs corporate reauthentication; it is not evidence that independent Apps Script triggers stopped.
+
+An owner-authorized acceptance operation can briefly include `AcceptanceRequest.js` with `deploy.cjs prepare --acceptance`. The existing minute trigger runs a fresh health check and persists one idempotent, privacy-safe report under `Sync_State/acceptanceAudit:<operation-id>`. It never changes mode, recipients, delivery reservations, closures, campaign epochs or trigger definitions. Remove the request file after acknowledgement and verify remote HEAD.

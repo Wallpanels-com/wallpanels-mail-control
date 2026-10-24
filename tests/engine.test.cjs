@@ -225,3 +225,38 @@ test('failed message edit never resends a notification or changes the SLA clock'
  assert.equal(f.tables.Errors.length,2);assert.equal(f.tables.Reminders.length,2);
  assert.ok(f.tables.Reminders.every(j=>j.status==='sent' && j.sentAt===60000));assert.equal(f.states.test247.startedAt,50000);
 });
+test('a waiting message subsequently moved to spam or trash stops all pending reminders',()=>{
+ for(const label of ['SPAM','TRASH']) {
+  const f=resumable();f.row.status='awaiting';f.app.queue(f.db,f.cfg,f.row,30,'test');
+  f.api.gmail=()=>({messages:[{id:'m1',internalDate:'10',labelIds:[label],payload:{headers:[{name:'From',value:'client@example.com'}]}}]});
+  f.app.dispatch(f.db,f.cfg,'test');
+  assert.equal(f.row.status,'not_required');assert.equal(f.row.closeReason,'gmail_excluded');
+  assert.ok(f.tables.Reminders.every(j=>j.status==='cancelled'));assert.equal(f.calls.length,0);
+ }
+});
+test('AI exclusion records the reason and never creates reminders for a newsletter',()=>{
+ const f=fixture();f.tables.Emails.length=0;
+ f.api.gmail=()=>({messages:[{id:'newsletter',internalDate:'10',labelIds:['INBOX'],snippet:'Our weekly newsletter',
+  payload:{headers:[{name:'From',value:'marketing@example.com'},{name:'Subject',value:'Weekly news'}]}}]});
+ f.api.analyze=()=>({requires_reply:false,is_customer:false,category:'marketing',summary:'Рассылка',reason:'Ответ не нужен'});
+ f.app.reconcile(f.db,f.cfg,'shared@example.org','thread',1);
+ assert.equal(f.tables.Emails[0].status,'not_required');assert.equal(f.tables.Emails[0].reason,'Ответ не нужен');
+ assert.equal(f.tables.Reminders.length,0);assert.equal(f.calls.length,0);
+});
+test('Send Reminder accurately acknowledges cooldown and replay without duplicate manual sends',()=>{
+ const f=fixture();f.app.queue(f.db,f.cfg,f.row,30,'test');
+ Object.assign(f.tables.Reminders[0],{status:'sent',telegramMessageId:50});
+ const first=callback(f,3,'r');f.app.handle(f.db,f.cfg,first,'test');
+ const second=callback(f,3,'r');second.callback_query.id='cb2';f.app.handle(f.db,f.cfg,second,'test');
+ f.app.handle(f.db,f.cfg,first,'test');
+ assert.equal(f.calls.filter(c=>c.method==='sendMessage').length,1);
+ const acks=f.calls.filter(c=>c.method==='answerCallbackQuery').map(c=>c.payload.text);
+ assert.ok(acks[0].includes('в очередь'));assert.ok(acks[1].includes('Повторите через 5 мин.'));assert.ok(acks[2].includes('уже обработано'));
+});
+test('employee cannot invoke the admin reminder action even with proof of another delivered card',()=>{
+ const f=fixture();f.app.queue(f.db,f.cfg,f.row,30,'production');
+ f.tables.Reminders.forEach(j=>Object.assign(j,{status:'sent',telegramMessageId:50}));
+ f.app.handle(f.db,f.cfg,callback(f,1,'r'),'production');
+ assert.equal(f.tables.Reminders.length,4);assert.equal(f.row.status,'awaiting');
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].payload.text,'Нет доступа.');
+});
