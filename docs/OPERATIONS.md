@@ -12,6 +12,16 @@
 8. Run `wpInstallTriggers` after health succeeds. Confirm `wpMonitor` every five minutes and `wpTelegramUpdates` every minute in project Triggers and Executions. Existing unrelated triggers are preserved.
 9. Before any production rollout, complete agreed live-message checks and obtain separate owner authorization. Until then, leave `MODE=test` and omit `WP_PRODUCTION_APPROVED`.
 
+## Production onboarding and cutover
+
+The owner explicitly authorized production on 24 October 2026, retaining the former test owner's Gmail permanently. The two approved administrators receive all mailbox notices; an employee receives only owned mailboxes, including both configured owners of the shared PM inbox. The owner-administrator receives one combined card for owned mail, not the two test-only role cards.
+
+The one-off `ProductionRequest.js` is staged with `prepare --production` and removed after a confirmed receipt. It runs fresh health checks and requires exactly the two expected triggers. `productionRollout:<operation>` preserves prior cursors, campaign and the cutover instant. New cursors are captured before a shared new baseline, existing waiting test/pre-cutover rows are archived without deleting history, pending test jobs are cancelled, the 24/7 flag is cleared and the optional owner role becomes `admin_employee`. MODE becomes production only after preparation; the immutable cutoff prevents old inbox/test notifications. Retries retain that cutoff and recover partial writes.
+
+Do not reset production cursors to repeat onboarding. Monitoring begins with new mail from cutover, not a bulk historic import. Weekends do not consume the 30/60/120-business-minute SLA; production remains Mon–Fri 09:00–19:00 America/New_York.
+
+An allowlisted user must press Start in a private bot chat. The signed update marks `telegramReady:<id>` active and confirms owned mail or administrator scope; unknown IDs get no mailbox information. The previously delivered test-owner chat is seeded from its delivery audit. Other recipients wait for their own Start, so a working administrator route does not depend on every employee being ready. Missing/unavailable chats retain jobs as `waiting_start`; a Telegram 403 disables that recipient until another Start, while ambiguous sends remain `unknown` and are never automatically repeated. Start releases only that recipient's latest held SLA stage per letter; earlier unsent stages are `superseded`, preventing a burst of obsolete reminders. Closed/replied mail is rechecked before dispatch. Readiness is not proof of real delivery until a send succeeds.
+
 ## Telegram actions
 
 Open Gmail selects the mailbox using `authuser` and opens the thread. Employees can close one incoming message with No Reply Needed. Both owners of a shared mailbox can act on its expectations. Admin messages link to each owner separately and offer Send Reminder; delivery rechecks Gmail before notifying owners. In test mode every route is redirected to the test administrator.
@@ -38,7 +48,7 @@ Send `/testoff` to the bot as the test administrator to disable the 24/7 clock, 
 
 An explicit owner request may restore a test expectation closed with No Reply Needed. The one-off private `TestResume.js` request is applied only after Telegram polling has processed pending callbacks. It checks the exact campaign and original epoch, rechecks Gmail for a reply, archives previous closure fields under `testResume:<operation-id>` and reopens that single row. Already sent deliveries and callback receipts are retained. Fresh Employee/Admin cards use a separate `resume` stage without consuming or resetting 30/60/120-minute stages. The private request is removed after acknowledgement; retries cannot reopen the row again.
 
-Bots cannot start private chats with users who have not pressed Start. Before a future approved production rollout, each employee and administrator must start the bot. A permanent Telegram rejection is recorded in `Reminders` and `Errors`; do not treat a successful test-admin delivery as proof of other recipients' availability.
+Bots cannot start private chats with users who have not pressed Start. Each employee and administrator must start the bot before their own deliveries can proceed. In production, unavailable chats and Telegram 403 responses retain jobs as `waiting_start`; the latter also records an error and disables readiness until a new Start. Other permanent rejections remain `failed`. Do not treat a successful test-admin delivery as proof of other recipients' availability.
 
 ## Pause and resume
 

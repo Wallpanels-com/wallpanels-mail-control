@@ -1,12 +1,20 @@
 # Validation record
 
-Date: 24 October 2026 (Europe/Kyiv). Rollout: **administrator-only test**, not a production acceptance sign-off.
+Date: 24 October 2026 (Europe/Kyiv). Production was explicitly authorized by the owner and activated at 23:52. Earlier administrator-only test evidence is retained below.
+
+## Production activation
+
+Runtime confirmed `MODE=production`, approval enabled, test campaign and its property disabled, seven mailboxes, eight mailbox owners and two administrators. The former test Gmail remains included with role `admin_employee`. Fresh API health passed. Both triggers remain installed. The operational snapshot records zero Errors, no old live expectations in the production queue and zero production jobs at cutover, which occurred on Saturday outside the work window.
+
+Cutover receipt: `Sync_State/productionRollout:production-20261024-01`; immutable baseline: 24 October 23:51:48 Europe/Kyiv. Historic test receipts and sent records were preserved. Start onboarding is gated by the approved numeric Telegram ID, never by an arbitrary username. The test owner's previously confirmed chat is ready. The other eight distinct recipients, including the second administrator, still need to press Start. No delivery to those recipients is claimed as live-verified.
+
+Production coverage includes 71 passing local tests: recipient isolation/shared mailbox routing, administrator-owner deduplication, permanent owner role, API health and trigger gates, durable partial-cutover recovery, exclusion of historic/test rows, Start authorization/replay/delayed polling, held-job release and latest-stage coalescing. A live Gmail reply is now confirmed (`replied`), and a subsequent incoming cycle produced its own 30/60/120 role pairs in the test campaign. Recipient onboarding and real employee delivery will only be fully observed when staff start the bot.
 
 ## Confirmed
 
 | Check | Evidence |
 | --- | --- |
-| Local critical logic | 60 Node tests pass; syntax/manifest check passes, including schedules, routing, action-specific authorization/cooldown, safe HTML, bounded AI context, late spam/trash exclusion and acceptance reconciliation |
+| Local critical logic | 71 Node tests pass; syntax/manifest check passes, including production cutover, onboarding, schedules, routing, action authorization, safe HTML and AI context |
 | Existing Gmail delegation | Live read-only profile checks pass for all seven approved mailboxes, including the optional test owner |
 | Apps Script Gmail access | Runtime health records `gmailOk=7`, `gmailTotal=7` using existing IAM/DWD |
 | Groq | Synthetic customer request classified correctly by `openai/gpt-oss-20b`; runtime Script Properties verified |
@@ -18,9 +26,9 @@ Date: 24 October 2026 (Europe/Kyiv). Rollout: **administrator-only test**, not a
 | Source parity | Downloaded Apps Script runtime matches committed `src/`; private bootstrap removed from HEAD after setup |
 | Publication | Code, tests and documentation pushed to the approved repository's `main`; private reference/configuration excluded |
 
-## Still requires live acceptance
+## Earlier test evidence (before production authorization)
 
-Open Gmail, Send Reminder, No Reply Needed and all three real elapsed-time stages have now been observed. Sent-reply closure and a subsequent incoming message in the same thread must still be observed before reporting those as live-passed. Unit tests do not substitute for live evidence.
+Open Gmail, Send Reminder, No Reply Needed and all three real elapsed-time stages were observed. At that snapshot, sent-reply closure and a subsequent incoming message were still outstanding; both were subsequently observed before production activation, as recorded above. Unit tests do not substitute for live evidence.
 
 Update: the existing live test message was found and the separate 24/7 campaign activated on 24 October at 01:56:23 Europe/Kyiv. Gmail → Groq → Sheets processing succeeded. The cumulative stages were due at 02:26:23, 02:56:23 and 03:56:23 Europe/Kyiv. Both role deliveries at every stage are now confirmed in Telegram, Cloud Logging and the Reminders ledger. Production weekdays and timezone rules are unchanged.
 
@@ -28,7 +36,7 @@ Live button update: the owner confirmed Open Gmail navigated to the correct lett
 
 Card presentation update: at 02:15:32 Europe/Kyiv, the runtime confirmed five successful `editMessageText` operations and zero edit failures for the active test campaign (`cards-v1`). These updated the existing initial, manual and restored role cards in place, preserving their keyboards and historical send-time waiting values. The next monitor still recorded the expectation as `awaiting` with the original activation epoch and no numeric SLA stages consumed. All future reminders use the same structured HTML formatter. Downloaded Apps Script HEAD matches the updated sources.
 
-No employee or second-administrator notification has been sent as part of testing. Those routes are covered by synthetic routing tests only and intentionally await separate owner permission. Production remains disabled.
+No employee or second-administrator notification was sent as part of testing. Those routes were covered by synthetic routing tests only. Production was disabled at that snapshot; the later owner-authorized activation is recorded above.
 
 The `/preview` command is available only to the test administrator in a private chat and previews only that administrator's approved test mailbox. It does not consume or change SLA stages. A real test email arriving after 18:30 Friday Miami time reaches its first 30-business-minute stage on Monday after 09:00; this pause is expected.
 
@@ -51,12 +59,12 @@ The 19:42 Europe/Kyiv snapshot is stored in the existing database under `Sync_St
 
 Review fixes: bound AI context without truncating JSON or dropping the target message; exclude plain-text attachments; stop reminders when the source moves to Spam/Trash; reinforce Russian summary/reason; accurately acknowledge manual-reminder cooldown and callback replay. Historical AI summaries remain as originally recorded; the language refinement applies to new analyses.
 
-Final live checks before separately approved production:
+Remaining acceptance checklist at the 19:42 snapshot:
 
 1. Reply from monitored Gmail to the current test letter. Confirm `replied`, then send a new question from the same personal sender in the same thread. Confirm a distinct incoming row and fresh 30-minute Employee/Admin pair, then close it with No Reply Needed.
 2. Send a non-actionable newsletter/thank-you and an actionable client request as separate messages. Confirm the first is `not_required` with an AI reason and no SLA notifications, while the second remains controlled. Do not shorten production SLA intervals to simulate acceptance.
 
-Before production, intended recipients must start the bot. Disable the temporary campaign, retain the standard business calendar and ordinary deduplication, inspect pending/ambiguous jobs and the roster, and obtain explicit owner permission. Employee and second-admin delivery is not yet live-verified.
+Activation update: the first item was subsequently observed through reply closure and a fresh incoming cycle. The second item's real non-actionable-versus-actionable email comparison remains an optional follow-up; six synthetic AI cases passed. The owner authorized production, the temporary campaign was disabled and normal calendar/deduplication restored. Staff can start on Monday; their jobs wait until onboarding. Employee and second-admin delivery is not yet live-verified.
 
 ## Operational limits
 

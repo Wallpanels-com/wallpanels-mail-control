@@ -10,13 +10,13 @@ var WpApp = (function () {
     if(!Array.isArray(c.employees) || c.employees.length!==7 || c.adminIds.length!==2) throw new Error('CONFIG_ROSTER');
     var expectedMailboxCount=6;
     if(c.testEmployee) {
-      if(c.testEmployee.role!=='admin_test' || String(c.testEmployee.telegramId)!==String(c.testAdminId) ||
+      if(['admin_test','admin_employee'].indexOf(c.testEmployee.role)<0 || String(c.testEmployee.telegramId)!==String(c.testAdminId) ||
         c.employees.some(function(e){return e.email===c.testEmployee.email || e.id===c.testEmployee.id;})) throw new Error('CONFIG_TEST_OWNER');
       c.employees=c.employees.concat([c.testEmployee]); expectedMailboxCount++;
     }
     c.mailboxes=Array.from(new Set(c.employees.map(function(e){return e.email;})));
     if(c.mailboxes.length!==expectedMailboxCount || c.mailboxes.some(function(m){return !/^[a-z][a-z0-9.]*@wallpanels\.com$/.test(m);})) throw new Error('CONFIG_MAILBOXES');
-    if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id) && e.role!=='admin_test';});})) throw new Error('CONFIG_ADMIN_OVERLAP');
+    if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id) && ['admin_test','admin_employee'].indexOf(e.role)<0;});})) throw new Error('CONFIG_ADMIN_OVERLAP');
     if(c.adminIds.map(String).indexOf(String(c.testAdminId))<0) throw new Error('CONFIG_TEST_ADMIN');
     c.token=p.getProperty('TELEGRAM_BOT_TOKEN'); c.groq=p.getProperty('GROQ_API_KEY');
     if(!c.token || !c.groq) throw new Error('SECRET_PROPERTY_MISSING');
@@ -57,6 +57,7 @@ var WpApp = (function () {
     }
   }
   function reconcile(db,c,mailbox,threadId,baseline,onlyMessageId) {
+    if(db.setting('MODE')==='production') baseline=Math.max(Number(baseline),Number(db.state('productionCutoff')||0));
     var thread=WpApi.gmail(c,mailbox,'threads/'+encodeURIComponent(threadId),{format:'full'});
     var msgs=(thread.messages||[]).sort(function(a,b){return +a.internalDate-+b.internalDate;});
     var rows=db.all('Emails'), changed=0;
@@ -224,14 +225,22 @@ var WpApp = (function () {
     var jobs=db.all('Reminders');
     for(var i=0;i<jobs.length && budget();i++) {
       var job=jobs[i];
+      if(mode==='production' && job.mode===mode && job.status==='waiting_start' && (db.state('telegramReady:'+job.recipient)||{}).active) {
+        job.status='pending';db.save('Reminders',job);
+      }
       if(job.mode!==mode || job.status!=='pending' || +job.nextAttemptAt>Date.now()) continue;
       var row=db.all('Emails').find(function(e){return e.id===job.emailId;});
       var campaign=db.state('test247'),testClock=row && WpTest.controls(campaign,row,mode);
+      if(mode==='production' && row && Number(row.receivedAt)<Number(db.state('productionCutoff')||0)) {job.status='cancelled';db.save('Reminders',job);continue;}
+      if(mode==='production' && row && WpCore.recipients(c,row.mailbox,mode).indexOf(String(job.recipient))<0) throw new Error('PRODUCTION_RECIPIENT_BLOCKED');
       if(mode==='test' && campaign && campaign.active && (!testClock || job.id.indexOf(':campaign-'+campaign.id+':')<0)) continue;
       if(mode==='test' && String(job.recipient)!==String(c.testAdminId)) throw new Error('TEST_RECIPIENT_BLOCKED');
       if(row && !testClock && row.kind!=='synthetic' && [30,60,120].indexOf(Number(job.stage))>=0 && !WpCore.isWorking(Date.now())) continue;
       if(!row || !current(db,c,row) || (mode==='production' && row.kind==='synthetic')) {
         job.status='cancelled';db.save('Reminders',job);continue;
+      }
+      if(mode==='production' && !(db.state('telegramReady:'+job.recipient)||{}).active) {
+        job.status='waiting_start';db.save('Reminders',job);continue;
       }
       var view=WpTest.view(job),payload=card(db,c,row,job,Date.now());
       job.status='sending';job.attemptAt=Date.now();db.save('Reminders',job);
@@ -241,7 +250,8 @@ var WpApp = (function () {
         console.log(JSON.stringify({delivery:'sent',mode:mode,stage:job.stage,view:view,synthetic:row.kind==='synthetic',testAdmin:String(job.recipient)===String(c.testAdminId)}));
       } catch(e) {
         // Telegram has no idempotency key. Ambiguous sends must not be blindly repeated.
-        job.status=e.code===429?'pending':(e.code>=400 && e.code<500?'failed':'unknown');
+        job.status=e.code===429?'pending':(mode==='production' && e.code===403?'waiting_start':(e.code>=400 && e.code<500?'failed':'unknown'));
+        if(job.status==='waiting_start') db.state('telegramReady:'+job.recipient,{active:false,at:Date.now(),source:'telegram_403'});
         job.nextAttemptAt=Date.now()+Math.max(60000,Number(e.retryAfter||60)*1000);
         job.error=e.code?'HTTP_'+e.code:'DELIVERY_UNKNOWN';db.save('Reminders',job);error(db,'telegram',e,job.id);
       }
@@ -265,6 +275,7 @@ var WpApp = (function () {
     }
     db.state('mailboxRotation',(turn+1)%c.mailboxes.length);
     var open=db.all('Emails').filter(function(r){return r.status==='awaiting' && r.kind!=='synthetic' &&
+      (mode!=='production' || Number(r.receivedAt)>=Number(db.state('productionCutoff')||0)) &&
       (!(campaign && campaign.active) || WpTest.controls(campaign,r,mode));});
     var rotation=Number(db.state('openRotation')||0),visited=0;
     for(var j=0;j<open.length && budget(200000);j++) {
@@ -358,6 +369,19 @@ var WpApp = (function () {
       previousStatus:receipt.previousStatus,dueAt:[30,60,120].map(function(m){return state.startedAt+m*60000;})}));
   }
   function handle(db,c,update,mode) {
+    if(update.message && mode==='production') {
+      var start=update.message,who=String(start.from.id),command='command:'+update.update_id;
+      if(start.chat.type!=='private' || String(start.chat.id)!==who || !/^\/start(?:@\w+)?(?:\s+\S+)?$/.test(start.text||'') || db.state(command)) return;
+      var owns=c.employees.filter(function(e){return String(e.telegramId)===who;}),isAdmin=c.adminIds.map(String).indexOf(who)>=0;
+      if(!owns.length && !isAdmin) {db.state(command,{at:Date.now(),result:'denied'});
+        WpApi.telegram(c.token,'sendMessage',{chat_id:who,text:'Ваш Telegram ID не включён в список сотрудников WallPanels. Обратитесь к администратору.'});return;}
+      db.state('telegramReady:'+who,{active:true,at:Date.now(),source:'start'});WpRollout.release(db,who);
+      db.state(command,{at:Date.now(),result:'registered'});
+      WpApi.telegram(c.token,'sendMessage',{chat_id:who,text:'WallPanels Mail Control подключён.\n\n'+
+        (isAdmin?'Роль: администратор. Вы получаете уведомления по всем подключённым ящикам.':'Вы получаете только уведомления по своей почте.')+
+        (owns.length?'\nВаша почта: '+owns.map(function(e){return e.email;}).join(', '):'')+
+        '\n\nГрафик: пн–пт, 09:00–19:00 America/New_York. Напоминания: 30, 60 и 120 рабочих минут. Ответ в Gmail или No Reply Needed прекращает контроль письма.'});return;
+    }
     if(update.message && mode==='test' && c.testEmployee) {
       var message=update.message, commandKey='command:'+update.update_id;
       if(message.chat.type==='private' && String(message.from.id)===String(c.testAdminId) && String(message.chat.id)===String(c.testAdminId) &&
@@ -485,14 +509,20 @@ var WpApp = (function () {
       PropertiesService.getScriptProperties().getProperty('WP_PRODUCTION_APPROVED')==='yes');
     db.state(key,report);console.log(JSON.stringify({acceptanceAudit:report}));return report;
   });}
-  return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,
+  function enableProduction(operation) {return locked(function(){
+    var c=config(),db=WpStore.open(c.sheetId),p=PropertiesService.getScriptProperties();
+    var receipt=WpRollout.activate(db,c,p,operation,function(mailbox){return WpApi.gmail(c,mailbox,'profile');},ScriptApp.getProjectTriggers());
+    console.log(JSON.stringify({productionActivated:true,phase:receipt.phase,startedAt:receipt.cutoffAt,mode:db.setting('MODE'),mailboxes:c.mailboxes.length,
+      employees:c.employees.length,admins:c.adminIds.length,test247:false}));return receipt;
+  });}
+  return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,enableProduction:enableProduction,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
     refreshTestMessages:refreshTestMessages};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}
-function wpTelegramUpdates() {var result=WpApp.updates();if(result.handled) console.log(JSON.stringify(result));if(result.ok) WpApp.testTick();return result;}
+function wpTelegramUpdates() {if(typeof wpProductionRequest==='function') wpProductionRequest();var result=WpApp.updates();if(result.handled) console.log(JSON.stringify(result));if(result.ok) WpApp.testTick();return result;}
 function wpHealth() {var result=WpApp.health(); console.log(JSON.stringify({mode:result.mode,gmailOk:result.mailboxes.filter(function(m){return m.ok;}).length,
   gmailTotal:result.mailboxes.length,bot:result.bot,ai:result.ai,webhook:result.webhook}));return result;}
 function wpInstallTriggers() {return WpApp.installTriggers();}

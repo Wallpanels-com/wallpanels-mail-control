@@ -10,7 +10,7 @@ function fixture(){
   const calls=[];let api={telegram:(token,method,payload)=>{calls.push({method,payload});return {message_id:50};},
     gmail:()=>({messages:[]}),analyze:()=>{throw Error('GROQ_HTTP_429');}};
   class Clock extends Date {static now(){return 100000;}}
-  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpTest:require('../src/TestCampaign.js'),WpMessages:require('../src/Messages.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
+  const ctx=vm.createContext({console,Date:Clock,Intl,WpCore:require('../src/Core.js'),WpRollout:require('../src/Rollout.js'),WpTest:require('../src/TestCampaign.js'),WpMessages:require('../src/Messages.js'),WpApi:api,Utilities:{getUuid:()=>String(++serial).padStart(32,'0')},
     module:{},CacheService:{},PropertiesService:{}});
   vm.runInContext(fs.readFileSync('src/App.js','utf8'),ctx);
   const row={id:'a'.repeat(20),status:'awaiting',kind:'synthetic',mailbox:'shared@example.org',messageId:'m1',threadId:'t1',receivedAt:Date.now(),subject:'test'};
@@ -259,4 +259,28 @@ test('employee cannot invoke the admin reminder action even with proof of anothe
  f.app.handle(f.db,f.cfg,callback(f,1,'r'),'production');
  assert.equal(f.tables.Reminders.length,4);assert.equal(f.row.status,'awaiting');
  assert.equal(f.calls.length,1);assert.equal(f.calls[0].payload.text,'Нет доступа.');
+});
+test('production Start registers only an allowlisted private ID and does not disclose other mailboxes',()=>{
+ const f=fixture(),msg=id=>({update_id:id,message:{date:100,from:{id},chat:{id,type:'private'},text:'/start'}});
+ f.app.handle(f.db,f.cfg,msg(1),'production');assert.equal(f.states['telegramReady:1'].active,true);
+ assert.ok(f.calls[0].payload.text.includes('shared@example.org'));assert.ok(!f.calls[0].payload.text.includes('администратор'));
+ f.app.handle(f.db,f.cfg,msg(99),'production');assert.equal(f.states['telegramReady:99'],undefined);assert.ok(!f.calls.at(-1).payload.text.includes('@'));
+ const admin=msg(4);admin.update_id=400;f.app.handle(f.db,f.cfg,admin,'production');assert.ok(f.calls.at(-1).payload.text.includes('по всем подключённым ящикам'));
+ f.app.handle(f.db,f.cfg,admin,'production');assert.equal(f.calls.length,3);
+});
+test('production queues for an unstarted user without attempting Telegram delivery',()=>{
+ const f=fixture();Object.assign(f.row,{kind:'live',receivedAt:1});f.ctx.WpCore={...f.ctx.WpCore,isWorking:()=>true};
+ f.api.gmail=()=>({messages:[{id:'m1',internalDate:'1',labelIds:['INBOX'],payload:{headers:[{name:'From',value:'client@example.com'}]}}]});
+ f.app.queue(f.db,f.cfg,f.row,30,'production');f.app.dispatch(f.db,f.cfg,'production');
+ assert.equal(f.calls.length,0);assert.ok(f.tables.Reminders.every(j=>j.status==='waiting_start'));
+ f.states['telegramReady:1']={active:true};f.app.dispatch(f.db,f.cfg,'production');
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].payload.chat_id,'1');
+});
+test('production excludes old test rows even if a pending reservation survived cutover',()=>{
+ const f=fixture();f.states.productionCutoff=200000;f.app.queue(f.db,f.cfg,f.row,30,'production');f.row.receivedAt=1;
+ f.app.dispatch(f.db,f.cfg,'production');assert.equal(f.calls.length,0);assert.ok(f.tables.Reminders.every(j=>j.status==='cancelled'));
+});
+test('a delayed but genuine Start still connects an approved employee after polling downtime',()=>{
+ const f=fixture();f.app.handle(f.db,f.cfg,{update_id:500,message:{date:-100000,from:{id:1},chat:{id:1,type:'private'},text:'/start'}},'production');
+ assert.equal(f.states['telegramReady:1'].active,true);
 });

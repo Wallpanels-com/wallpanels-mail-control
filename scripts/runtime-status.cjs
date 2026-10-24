@@ -15,7 +15,7 @@ async function main(){
   const result=[];let pageToken;
   const allowed=['ok','mode','employees','mailboxes','gmailOk','gmailTotal','bot','ai','webhook','triggers','health',
     'monitoredMailboxes','syntheticStatus','deliveries','unsafeRecipients','monitorLastSuccess','updatesLastSuccess','errorCount',
-    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed','acceptanceAudit'];
+    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed','acceptanceAudit','productionActivated','phase','admins','productionStatus'];
   do{
     const response=await auth.request({url:'https://logging.googleapis.com/v2/entries:list',method:'POST',data:{
       resourceNames:['projects/'+cfg.projectId],filter:filter,orderBy:'timestamp desc',pageSize:100,pageToken}});
