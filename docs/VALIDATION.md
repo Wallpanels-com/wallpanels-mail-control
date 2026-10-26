@@ -1,5 +1,15 @@
 # Validation record
 
+## 27 October newsletter false-positive correction
+
+The owner reported a Malwarebytes cybersecurity newsletter generating unanswered-mail reminders. Read-only inspection covered 56 incoming copies across all eight mailboxes over the preceding 12 hours. The cause was the truncation fallback unconditionally turning a negative AI decision into `requires_reply=true`, even when AI classified the message as marketing. A second observed CRM sending-domain/brand variant was outside the previous exact rule.
+
+The fallback now honors a negative non-customer marketing decision only when native mailing-list headers corroborate it. Ambiguous or customer-classified truncated mail remains protected. The request carries only a boolean header signal, not unsubscribe header URLs/list identifiers, and remains one incoming message, <=4,500 UTF-8 bytes and <=600 completion tokens. Provider-generated CRM assignments require both a recognized transport address and the anchored literal assignment template, never only a no-reply address. New final AI decisions are recorded in `Sync_State/aiDecision:<emailId>`.
+
+All 101 local tests passed. Eight synthetic Groq acceptance cases also passed after applying the actual postprocessor, including a long newsletter and a long actionable customer request with mailing-list headers. Their total usage was 4,593 tokens; the largest serialized request was 4,013 bytes. A private cleanup simulation verified preservation of client mail, sent/unknown receipts, roles, SLA policies, production cutoff and Gmail cursors, with idempotent replay and no Telegram sends.
+
+Live cleanup completed at 2026-10-26 22:26:25 UTC (27 October Kyiv). The delivery audit found six Malwarebytes deliveries and five deliveries for a second CRM assignment variant in the preceding 12 hours. The reviewed Malwarebytes expectation was closed and its three remaining unsent/Start-held reservations cancelled. Regular monitoring had already closed the newly recognized CRM expectation before the cleanup snapshot. Legacy recheck errors were zero. All eight mailboxes and ten owner identities remained configured, PM/default intervals and memberships were preserved, and the cumulative Error count stayed 182.
+
 ## 26 October shared PM group and short SLA
 
 The owner authorized one additional PM owner, a second mailbox for an existing owner and cumulative 5/10/15-business-minute reminders for new shared-mailbox mail. Existing recipients, administrators, filters, primary mailboxes and the New York work calendar were preserved. Additional membership is kept in private config and mirrored to the existing Settings tab; Employees retains its seven-column schema.

@@ -3,6 +3,22 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const core=require('../src/Core.js');
 const rule={id:'crm',sender:'info@example.org',subjectPattern:'^New Lead \\(Example\\) was assigned to you .+$',category:'system',reason:'CRM notice'};
 function message(from,subject){return {id:'m',labelIds:['INBOX'],payload:{headers:[{name:'From',value:from},{name:'Subject',value:subject}]}};}
+test('CRM assignments are recognized across observed sending variants, never by no-reply alone',()=>{
+ for(const from of ['info+one.example@mail.msgsndrlg.com','info+two.example@mail.msgsndrlb.com']){
+  for(const subject of ['New Lead (Example Home) was assigned to you Sales','Missed Call (Example Home) assigned to you Sales'])
+   assert.equal(core.exclusion(message(from,subject),[]).id,'crm_assignment_template');
+  for(const subject of ['Please send a quotation','Re: New Lead (Example Home) was assigned to you Sales','New Lead (Example Home) was assigned to you Sales?'])
+   assert.equal(core.exclusion(message(from,subject),[]),null);
+ }
+ assert.equal(core.exclusion(message('customer@example.org','New Lead (Example Home) was assigned to you Sales'),[]),null);
+ assert.equal(core.exclusion(message('noreply@google.com','Share request for proposal'),[]),null);
+});
+test('bulk evidence uses mailing-list headers, not sender or generic Gmail category',()=>{
+ const m=message('noreply@example.org','Notice');m.labelIds.push('CATEGORY_UPDATES');assert.equal(core.bulkEvidence(m),false);
+ for(const [name,value] of [['List-Unsubscribe','<mailto:unsubscribe@example.org>'],['List-ID','news.example.org'],['Precedence','bulk']]){
+  const x=message('client@example.org','Notice');x.payload.headers.push({name,value});assert.equal(core.bulkEvidence(x),true);
+ }
+});
 test('reviewed exclusion requires exact sender and exact anchored template',()=>{
  assert.equal(core.exclusion(message('Example <INFO@example.org>','New Lead (Example) was assigned to you Sales'),[rule]).id,'crm');
  for(const m of [message('client@example.org','New Lead (Example) was assigned to you Sales'),

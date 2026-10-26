@@ -75,6 +75,30 @@ test('a clipped message cannot silently lose reminders through a negative AI res
  const result=f.api.analyze([source],source,'FAKE');assert.equal(result.requires_reply,true);assert.match(result.reason,/сокращён/);
  source.snippet='Our newsletter, no response needed.';assert.equal(f.api.analyze([source],source,'FAKE').requires_reply,false);
 });
+test('a confirmed long mailing-list newsletter stays excluded instead of being resurrected by truncation',()=>{
+ const f=fixture({requires_reply:false,is_customer:false,category:'marketing',summary:'Новостная рассылка',reason:'Ответ не требуется'});
+ const source=message('newsletter',10,'Weekly cybersecurity news. '.repeat(1200));
+ source.payload.headers[0].value='Newsletter <noreply@news.example.org>';
+ source.payload.headers.push({name:'List-Unsubscribe',value:'<https://example.org/unsubscribe?private=DO_NOT_TRANSMIT>'});
+ const value=f.api.analyze([source],source,'FAKE');
+ assert.equal(value.requires_reply,false);assert.equal(value.reason,'Ответ не требуется');assert.equal(f.calls(),1);
+ const request=f.request(),input=JSON.parse(request.messages[1].content)[0];
+ assert.equal(input.mailing_list,true);assert.equal(input.truncated,true);assert.ok(!JSON.stringify(request).includes('DO_NOT_TRANSMIT'));
+ assert.ok(Buffer.byteLength(JSON.stringify(request))<=4500);assert.equal(request.max_completion_tokens,600);
+});
+test('no-reply alone, uncertain category or customer classification cannot bypass truncated-mail protection',()=>{
+ for(const kind of ['noreply_only','uncertain','customer']){
+  const f=fixture({requires_reply:false,is_customer:kind==='customer',category:kind==='uncertain'?'other':'marketing',summary:'x',reason:'x'});
+  const source=message('target',10,'x'.repeat(10000));source.payload.headers[0].value='noreply@example.org';
+  if(kind!=='noreply_only')source.payload.headers.push({name:'List-ID',value:'list.example.org'});
+  assert.equal(f.api.analyze([source],source,'FAKE').requires_reply,true);
+ }
+});
+test('an actionable automated client request remains eligible even with unsubscribe headers',()=>{
+ const f=fixture(),source=message('target',10,'Please approve the panel layout by replying. '.repeat(1500));
+ source.payload.headers[0].value='noreply@client.example.org';source.payload.headers.push({name:'Precedence',value:'bulk'});
+ assert.equal(f.api.analyze([source],source,'FAKE').requires_reply,true);
+});
 test('a short latest reply is not contaminated by an earlier actionable client request',()=>{
  const f=fixture(),source=message('target',10,'Thank you, no further action needed.');
  f.api.analyze([message('older',1,'Please send a quotation. REPEAT_OLD_REQUEST'),source],source,'FAKE');

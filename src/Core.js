@@ -51,7 +51,13 @@ var WpCore = (function () {
     return (rules||[]).find(function(rule){
       // An exact sender AND a reviewed subject template. Never block all info@/noreply@ mail.
       return from.length===1 && from[0]===rule.sender && new RegExp(rule.subjectPattern,'i').test(subject);
-    })||null;
+    })||((from.length===1 && /^info\+[^@]+@mail\.msgsndr[a-z0-9]+\.com$/.test(from[0]) &&
+      /^(?:New Lead|Missed Call) \([^\r\n()]{1,100}\) (?:was )?assigned to you [^\r\n?]{1,160}$/i.test(subject))?
+      {id:'crm_assignment_template',category:'system',reason:'Автоуведомление CRM о назначении лида или звонка. Ответ на это письмо не требуется.'}:null);
+  }
+  function bulkEvidence(msg) {
+    return !!String(header(msg,'List-Unsubscribe')||'').trim() || !!String(header(msg,'List-ID')||'').trim() ||
+      /^(?:bulk|list|junk)$/i.test(String(header(msg,'Precedence')||'').trim());
   }
   function replied(messages, source) {
     var sender = addresses(header(source,'From'));
@@ -106,7 +112,7 @@ var WpCore = (function () {
     return due.length ? due[0] : 0; // At most one new stage per monitoring run after an outage.
   }
   return {businessMinutes:businessMinutes,isWorking:isWorking,header:header,addresses:addresses,
-    incoming:incoming,exclusion:exclusion,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
+    incoming:incoming,exclusion:exclusion,bulkEvidence:bulkEvidence,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
     employeeMailboxes:employeeMailboxes,owners:owners,reminderStages:reminderStages,isSlaStage:isSlaStage,
     authorized:authorized,recipients:recipients,dueStage:dueStage};
 })();

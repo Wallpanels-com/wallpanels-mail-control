@@ -76,6 +76,8 @@ var WpApp = (function () {
     aiCalls++;
     try {
       var v=WpApi.analyze(messages,source,c.groq);
+      db.state('aiDecision:'+row.id,{revision:'bulk-mail-v3',at:Date.now(),requiresReply:v.requires_reply,
+        isCustomer:v.is_customer,category:v.category,mailingList:WpCore.bulkEvidence(source)});
       Object.assign(row,{aiStatus:'complete',category:v.category,summary:v.summary,reason:v.reason,updatedAt:Date.now()});
       if(!v.requires_reply) close(db,row,'not_required','ai',v.reason);
       else db.save('Emails',row);
