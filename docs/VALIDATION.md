@@ -1,5 +1,15 @@
 # Validation record
 
+## 26 October global noise filtering and roster addition
+
+The owner authorized one new mailbox owner and noise reduction across every configured account. Read-only Gmail inspection covered 30 incoming copies across the seven existing mailboxes during 13:12–17:12 UTC. Six were CRM lead/call assignments, one an authentication notice and two confirmed unsolicited vendor pitches. Client/project correspondence and actionable Drive access requests were retained. The new mailbox had zero incoming messages in a separate four-hour read-only check at 17:25 UTC. Read-only profile checks passed for all eight mailboxes.
+
+Production migration completed at 17:22:03 UTC. It retained both administrators, appended the ninth mailbox-owner row and initialized only the new mailbox's fresh history baseline. The recipient was not marked ready without Start. Four exact-sender-plus-subject rules apply globally. Database review found 22 CRM assignment records and 67 deliveries for those records in the preceding four-hour window. Thirty-nine still-unsent reminders were cancelled. Sent receipts and original classifications were preserved in the existing Sheets audit. Existing cursors, production cutoff, work calendar and 30/60/120 stages were not reset.
+
+All 83 local tests and 12 synthetic Groq checks passed, including vendor advertising with a question, CRM assignment, login codes, client quotation/complaint and document-access requests. Request/completion budgets stayed intact. A private in-memory migration test also verified interrupted-cleanup recovery, original-config backup, no sends, old-cursor preservation and repeat-run idempotency. The first maintenance attempt encountered a stored non-string subject; String conversion and a regression test fixed it before the completed run. One Telegram network ambiguity was recorded separately; its receipt is preserved rather than blindly resent.
+
+The 17:23:42 UTC regular monitor succeeded with eight mailboxes, 16 active expectations, zero pending AI analyses and the unchanged cumulative Error count of 182. Final remote-content verification matched every runtime module and confirmed the one-time maintenance helper was removed (10 project files). Apps Script version 10 preserves the final runtime.
+
 ## 26 October economical AI update
 
 Read-only preflight found 177 historical `GROQ_HTTP_413` entries and eight pending analyses, despite successful monitor executions. One unchanged real request reproduced the exact failure: 8,156 requested tokens against the organization's 8,000 limit. It sent five thread messages in a 13,802-byte request. Two additional execution failures in the prior 24 hours were generic Google server errors, followed by successful automatic runs.

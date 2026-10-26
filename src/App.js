@@ -72,6 +72,7 @@ var WpApp = (function () {
     var rule=WpCore.exclusion(source,c.mailExclusions);
     if(!rule || (row.status!=='awaiting' && !(row.status==='not_required' && row.closeReason==='filter:'+rule.id))) return false;
     if(row.status==='awaiting') {
+      // Persist recovery evidence before closing. A retry also finishes partially cancelled jobs.
       if(!db.state('mailFilter:'+row.id)) db.state('mailFilter:'+row.id,{at:Date.now(),rule:rule.id,previous:{status:row.status,aiStatus:row.aiStatus,
         category:row.category||'',summary:row.summary||'',reason:row.reason||''},jobs:db.all('Reminders')
           .filter(function(j){return j.emailId===row.id && ['pending','waiting_start'].includes(j.status);})
