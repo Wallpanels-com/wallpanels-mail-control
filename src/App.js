@@ -7,8 +7,12 @@ var WpApp = (function () {
     var c=JSON.parse(raw);
     if(c.projectId!=='wallpanels-gmail-control' || !c.sheetId || !c.serviceAccount ||
       !c.serviceAccount.endsWith('@wallpanels-gmail-control.iam.gserviceaccount.com')) throw new Error('CONFIG_SCOPE');
-    if(!Array.isArray(c.employees) || c.employees.length!==7 || c.adminIds.length!==2) throw new Error('CONFIG_ROSTER');
-    var expectedMailboxCount=6;
+    var baseCount=c.employeeCount||7,baseMailboxes=c.employeeMailboxCount||6;
+    if(!Number.isInteger(baseCount) || baseCount<7 || baseCount>30 || !Number.isInteger(baseMailboxes) ||
+      baseMailboxes<6 || baseMailboxes>baseCount || !Array.isArray(c.employees) || c.employees.length!==baseCount ||
+      new Set(c.employees.map(function(e){return e.id;})).size!==baseCount ||
+      new Set(c.employees.map(function(e){return String(e.telegramId);})).size!==baseCount || c.adminIds.length!==2) throw new Error('CONFIG_ROSTER');
+    var expectedMailboxCount=baseMailboxes;
     if(c.testEmployee) {
       if(['admin_test','admin_employee'].indexOf(c.testEmployee.role)<0 || String(c.testEmployee.telegramId)!==String(c.testAdminId) ||
         c.employees.some(function(e){return e.email===c.testEmployee.email || e.id===c.testEmployee.id;})) throw new Error('CONFIG_TEST_OWNER');
@@ -18,6 +22,13 @@ var WpApp = (function () {
     if(c.mailboxes.length!==expectedMailboxCount || c.mailboxes.some(function(m){return !/^[a-z][a-z0-9.]*@wallpanels\.com$/.test(m);})) throw new Error('CONFIG_MAILBOXES');
     if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id) && ['admin_test','admin_employee'].indexOf(e.role)<0;});})) throw new Error('CONFIG_ADMIN_OVERLAP');
     if(c.adminIds.map(String).indexOf(String(c.testAdminId))<0) throw new Error('CONFIG_TEST_ADMIN');
+    if(c.mailExclusions && (!Array.isArray(c.mailExclusions) || c.mailExclusions.length>20 || c.mailExclusions.some(function(r){
+      if(!/^[a-z0-9_-]{1,60}$/.test(r.id) || typeof r.sender!=='string' || r.sender!==r.sender.toLowerCase() ||
+        WpCore.addresses(r.sender).length!==1 || typeof r.subjectPattern!=='string' || r.subjectPattern.length>240 ||
+        !r.subjectPattern.startsWith('^') || !r.subjectPattern.endsWith('$') || !['system','marketing'].includes(r.category) ||
+        typeof r.reason!=='string' || r.reason.length>200) return true;
+      try {new RegExp(r.subjectPattern,'i');return false;}catch(_){return true;}
+    }))) throw new Error('CONFIG_EXCLUSIONS');
     c.token=p.getProperty('TELEGRAM_BOT_TOKEN'); c.groq=p.getProperty('GROQ_API_KEY');
     if(!c.token || !c.groq) throw new Error('SECRET_PROPERTY_MISSING');
     return c;
@@ -42,6 +53,7 @@ var WpApp = (function () {
     db.save('Emails',row);
   }
   function analyze(db,c,row,messages,source) {
+    if(exclude(db,c,row,source)) return;
     if(row.aiStatus==='complete' || +row.nextAiAt>Date.now() || aiCalls>=3 || !budget()) return;
     aiCalls++;
     try {
@@ -55,6 +67,21 @@ var WpApp = (function () {
       row.summary='AI временно недоступен: требуется проверка сотрудником.';
       db.save('Emails',row); error(db,'ai',e,row.id);
     }
+  }
+  function exclude(db,c,row,source) {
+    var rule=WpCore.exclusion(source,c.mailExclusions);
+    if(!rule || (row.status!=='awaiting' && !(row.status==='not_required' && row.closeReason==='filter:'+rule.id))) return false;
+    if(row.status==='awaiting') {
+      if(!db.state('mailFilter:'+row.id)) db.state('mailFilter:'+row.id,{at:Date.now(),rule:rule.id,previous:{status:row.status,aiStatus:row.aiStatus,
+        category:row.category||'',summary:row.summary||'',reason:row.reason||''},jobs:db.all('Reminders')
+          .filter(function(j){return j.emailId===row.id && ['pending','waiting_start'].includes(j.status);})
+          .map(function(j){return {id:j.id,status:j.status,error:j.error||''};})});
+      Object.assign(row,{aiStatus:'complete',category:rule.category,summary:rule.reason,reason:rule.reason});
+      close(db,row,'not_required','filter','filter:'+rule.id);
+    }
+    db.all('Reminders').filter(function(j){return j.emailId===row.id && ['pending','waiting_start'].includes(j.status);})
+      .forEach(function(j){j.status='cancelled';j.error='FILTERED:'+rule.id;db.save('Reminders',j);});
+    return true;
   }
   function reconcile(db,c,mailbox,threadId,baseline,onlyMessageId) {
     if(db.setting('MODE')==='production') baseline=Math.max(Number(baseline),Number(db.state('productionCutoff')||0));
@@ -135,6 +162,7 @@ var WpApp = (function () {
     var source=(thread.messages||[]).find(function(m){return m.id===row.messageId;});
     if(!source) {close(db,row,'unavailable','system','message_missing'); return false;}
     if(!WpCore.incoming(source,[row.mailbox])) {close(db,row,'not_required','system','gmail_excluded');return false;}
+    if(exclude(db,c,row,source)) return false;
     var hasReply=WpCore.replied(thread.messages||[],source),campaign=db.state('test247');
     if(db.setting('MODE')==='test' && WpTest.controls(campaign,row,'test')) {
       var prior=db.state('testEvidence:'+row.id)||{};
@@ -534,7 +562,7 @@ var WpApp = (function () {
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,enableProduction:enableProduction,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
-    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget};
+    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget,exclude:exclude};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}

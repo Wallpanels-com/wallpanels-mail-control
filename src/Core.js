@@ -46,6 +46,13 @@ var WpCore = (function () {
     return !labels.some(function (l) {return ['SENT','DRAFT','SPAM','TRASH'].indexOf(l)>=0;}) &&
       !addresses(header(msg,'From')).some(function (a) {return ownAddresses.indexOf(a)>=0;});
   }
+  function exclusion(msg,rules) {
+    var from=addresses(header(msg,'From')),subject=String(header(msg,'Subject')||'').trim();
+    return (rules||[]).find(function(rule){
+      // An exact sender AND a reviewed subject template. Never block all info@/noreply@ mail.
+      return from.length===1 && from[0]===rule.sender && new RegExp(rule.subjectPattern,'i').test(subject);
+    })||null;
+  }
   function replied(messages, source) {
     var sender = addresses(header(source,'From'));
     var messageId = header(source,'Message-ID');
@@ -85,7 +92,7 @@ var WpCore = (function () {
     return due.length ? due[0] : 0; // At most one new stage per monitoring run after an outage.
   }
   return {businessMinutes:businessMinutes,isWorking:isWorking,header:header,addresses:addresses,
-    incoming:incoming,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
+    incoming:incoming,exclusion:exclusion,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
     authorized:authorized,recipients:recipients,dueStage:dueStage};
 })();
 if(typeof module!=='undefined') module.exports=WpCore;
