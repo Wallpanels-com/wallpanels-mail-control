@@ -4,20 +4,20 @@ Google Apps Script backend for Gmail response monitoring, Groq classification an
 
 ## Current rollout
 
-The initial rollout is **test mode**. All notifications are routed to the configured test administrator. Production requires separate owner approval and the `WP_PRODUCTION_APPROVED=yes` Script Property, in addition to `Settings → MODE=production`. Never set these as part of a routine deployment.
+Owner-authorized **production** has been active since 24 October 2026. Employees receive only their owned mailboxes; both administrators receive all connected mailboxes. Each approved Telegram account must press Start before its deliveries proceed. Production requires `WP_PRODUCTION_APPROVED=yes` and `Settings → MODE=production`; a routine deployment never changes either setting.
 
 An explicitly activated temporary 24/7 test campaign can scope synchronization to the approved test mailbox and client. It maintains its own durable activation time and sends distinct Employee/Admin cards to the same test administrator. This deliberate two-card exception never changes production deduplication or the production calendar. See operations for `/testoff`.
 
 Runtime settings and staff details live in private Script Properties (`WP_CONFIG_JSON`) and the existing Google Sheet. `TELEGRAM_BOT_TOKEN` and `GROQ_API_KEY` remain in Script Properties. No employee roster, tokens or mail content belongs in this repository.
 
-An explicitly approved optional `testEmployee` can combine the test-admin and mailbox-owner roles. Its mailbox is an additional allowlisted address, and recipient IDs are deduplicated across roles. All other administrator mailboxes remain excluded.
+The explicitly approved optional `testEmployee` is retained in production with role `admin_employee`. Its mailbox is an additional allowlisted address, and recipient IDs are deduplicated across roles. All other administrator mailboxes remain excluded.
 
 ## Behaviour
 
 - One synchronization cursor per distinct mailbox; shared mailbox owners receive separate employee notifications and admins receive one each.
 - Each inbound Gmail message has its own durable expectation. Reading mail and drafting replies do not close it. A sent reply after that message closes it; later incoming messages are independent.
 - Work schedule: weekdays, 09:00–19:00 America/New_York, including DST. Stages: 30, 60 and 120 business minutes. Monitoring every five minutes introduces scheduling latency. After downtime, one new overdue stage is queued per run.
-- Groq `openai/gpt-oss-20b` classifies a bounded context once per incoming message. Failed analyses retry with backoff. Unclassified messages stay awaiting human review and retain reminders.
+- Groq `openai/gpt-oss-20b` classifies only the current incoming message, once, without the thread history. The complete request is capped at 4,500 UTF-8 bytes and completion at 600 tokens. Failed analyses retry with backoff. Unclassified or conservatively shortened messages retain human-review reminders.
 - Callback actions require an authorized private Telegram chat and proof of a matching delivered notification. Callback IDs and polling offsets are persisted.
 - A script lock serializes monitoring, callback handling and database writes. Remote delivery is reserved before sending. An interrupted or ambiguous Telegram send becomes `unknown` and is not blindly retried, because Telegram has no send-message idempotency key.
 - On initial setup, current Gmail history IDs establish the baseline. Older mail is not imported. Expired history is recovered using a paginated scan bounded by that original baseline.

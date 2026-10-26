@@ -257,10 +257,25 @@ var WpApp = (function () {
       }
     }
   }
+  function recoverAiBudget(db) {
+    var revision=WpApi.aiRevision,key='aiBudgetRecovery:'+revision;
+    if(!revision || db.setting('MODE')!=='production' || db.state(key)) return;
+    var failed={};db.all('Errors').filter(function(e){return e.component==='ai' && e.code==='GROQ_HTTP_413';})
+      .forEach(function(e){failed[e.reference]=true;});
+    var previousDue={},cutoff=Number(db.state('productionCutoff')||0);
+    db.all('Emails').filter(function(r){return r.kind==='live' && r.status==='awaiting' && r.aiStatus==='pending' &&
+      Number(r.receivedAt)>=cutoff && failed[r.id];}).forEach(function(r){
+        previousDue[r.id]=r.nextAiAt||0;r.nextAiAt=0;db.save('Emails',r);
+      });
+    db.state(key,{at:Date.now(),previousDue:previousDue,queued:Object.keys(previousDue).length});
+    console.log(JSON.stringify({aiRecovery:{revision:revision,queued:Object.keys(previousDue).length}}));
+    // Only analysis retries are brought forward. Gmail cursors, SLA epochs and delivery keys stay intact.
+  }
   function monitor() {return locked(function(){
     var c=config(),db=WpStore.open(c.sheetId),mode=db.setting('MODE');
     if(mode==='production' && PropertiesService.getScriptProperties().getProperty('WP_PRODUCTION_APPROVED')!=='yes') throw new Error('PRODUCTION_NOT_APPROVED');
     if(['test','production'].indexOf(mode)<0) return {paused:true};
+    recoverAiBudget(db);
     if(mode==='test') activateTestRequest(db,c);
     var campaign=mode==='test'?db.state('test247'):null;
     if(mode==='test') refreshTestMessages(db,c);
@@ -300,7 +315,8 @@ var WpApp = (function () {
     db.state('monitorLastSuccess',Date.now());
     if(campaign && campaign.active) console.log(JSON.stringify({test247:true,startedAt:campaign.startedAt,status:(db.all('Emails').find(function(r){return r.messageId===campaign.messageId;})||{}).status,
       stages:db.all('Reminders').filter(function(r){return r.id.indexOf(':campaign-'+campaign.id+':')>=0;}).map(function(r){return {stage:r.stage,view:WpTest.view(r),status:r.status};})}));
-    return {ok:true,mode:mode,mailboxes:monitored.length,active:open.length};
+    return {ok:true,mode:mode,mailboxes:monitored.length,active:open.length,
+      aiPending:open.filter(function(r){return r.status==='awaiting' && r.aiStatus!=='complete';}).length,errorCount:db.all('Errors').length};
   });}
   function activateTestRequest(db,c) {
     if(typeof wpTestRequest!=='function') return;
@@ -518,7 +534,7 @@ var WpApp = (function () {
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,enableProduction:enableProduction,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
-    refreshTestMessages:refreshTestMessages};
+    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}

@@ -56,6 +56,12 @@ Set `Settings/MODE` to `paused` to stop synchronization and Telegram delivery wi
 
 ## Failure recovery
 
+AI uses only the exact incoming message, never prior thread messages. Explicitly delimited quoted reply history is removed only when new text precedes it and its suffix contains no unquoted inline/bottom-posted reply. Plain text is capped at 2,400 UTF-8 bytes with both the beginning and end retained; the entire serialized Groq request is capped at 4,500 bytes, reducing the text further for escape-heavy data. Completion is capped at 600 tokens with low reasoning effort and short Russian summary/reason. There is one API call per analysis attempt; completed analyses are reused. Gmail reply detection still checks thread metadata independently of AI.
+
+A shortened message cannot be silently excluded by a negative AI result: it stays controlled with an explicit human-review reason. This deliberately permits a cautious extra reminder, including for a large non-actionable message, rather than missing an unseen client request. Normal short newsletters/thanks/auto-replies can still be excluded.
+
+`single-message-v2` brings forward existing pending production analyses that failed with `GROQ_HTTP_413` once, preserving their previous retry due times under `Sync_State/aiBudgetRecovery:single-message-v2`. The normal three-analysis-per-run budget remains. This does not reset receipt times, Gmail cursors, completed classifications or reminder delivery keys. Historic Errors rows remain audit evidence; monitor counters distinguish currently pending AI work from the cumulative historical error count.
+
 - Review recent `Errors` and trigger executions. No raw API error body is stored, to avoid token/content leaks.
 - `pending` AI analyses retry with exponential backoff, capped at one hour. Up to three Groq calls are attempted per monitoring run.
 - `Reminders/unknown` needs manual review of Telegram chat history; do not change it to pending until non-delivery is established. `failed` usually needs the user to press Start or restore chat permissions.

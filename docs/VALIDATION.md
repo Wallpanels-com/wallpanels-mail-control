@@ -1,5 +1,15 @@
 # Validation record
 
+## 26 October economical AI update
+
+Read-only preflight found 177 historical `GROQ_HTTP_413` entries and eight pending analyses, despite successful monitor executions. One unchanged real request reproduced the exact failure: 8,156 requested tokens against the organization's 8,000 limit. It sent five thread messages in a 13,802-byte request. Two additional execution failures in the prior 24 hours were generic Google server errors, followed by successful automatic runs.
+
+The owner requested lower token consumption, not a limit or plan increase. `single-message-v2` sends only the current incoming message, removes explicitly delimited quoted history, caps the complete UTF-8 request at 4,500 bytes and completion at 600 tokens, and preserves human review for truncated messages. No routing, SLA calendar, mailbox, delivery history, or production cutover changes are made.
+
+Pre-deployment live Groq checks: all six synthetic decisions passed with 370–420 total tokens per example. The previously failing real message succeeded with HTTP 200, one message, 3,701 request bytes and 1,901 actual total tokens. These are observed examples, not a promise of identical usage for every email. Local tests also check Unicode/escaping budgets, tail preservation, omission of earlier thread messages, conservative truncation, reuse of completed analyses, independent sent-reply detection and idempotent recovery.
+
+Final verification: all 80 local tests and syntax/manifest checks pass, including a multi-megabyte email and inline/bottom-posted reply preservation. Downloaded Apps Script HEAD matches the final runtime sources. At 14:23 Europe/Kyiv the versioned recovery queued eight existing 413 failures. The regular 14:23, 14:28 and 14:33 production runs reported pending AI counts of 6, 3 and 0 respectively; all seven mailboxes remained monitored. Cumulative Error count stayed 181 across those three runs. Historical error rows were preserved, not erased or represented as a zero-error history. Production recipients, calendar, source receipt times and reminder keys were not reset.
+
 Date: 24 October 2026 (Europe/Kyiv). Production was explicitly authorized by the owner and activated at 23:52. Earlier administrator-only test evidence is retained below.
 
 ## Production activation

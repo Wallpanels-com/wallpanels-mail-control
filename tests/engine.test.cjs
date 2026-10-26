@@ -75,6 +75,33 @@ test('reconcile stores a new incoming even when Groq fails, and repeats do not d
   const row=f.tables.Emails.find(r=>r.messageId==='real1');
   assert.equal(row.status,'awaiting');assert.equal(row.aiStatus,'pending');assert.equal(row.aiAttempts,1);assert.equal(f.tables.Emails.length,2);
 });
+test('successful AI analysis is reused on resync instead of spending tokens on the same message again',()=>{
+ const f=fixture(),m={id:'real1',internalDate:'1000',labelIds:['INBOX'],payload:{headers:[{name:'From',value:'client@example.com'}]}};let analyses=0;
+ f.api.gmail=()=>({messages:[m]});f.api.analyze=()=>{analyses++;return {requires_reply:true,category:'customer',summary:'Запрос',reason:'Нужен ответ'};};
+ f.app.reconcile(f.db,f.cfg,'shared@example.org','thread1',0);f.app.reconcile(f.db,f.cfg,'shared@example.org','thread1',0);
+ assert.equal(analyses,1);assert.equal(f.tables.Emails.find(r=>r.messageId==='real1').aiStatus,'complete');
+});
+test('an actual Gmail reply closes an incoming without an unnecessary AI call',()=>{
+ const f=fixture(),m={id:'real1',internalDate:'1000',labelIds:['INBOX'],payload:{headers:[{name:'From',value:'client@example.com'},{name:'Message-ID',value:'<original@example.com>'}]}};
+ const reply={id:'sent1',internalDate:'2000',labelIds:['SENT'],payload:{headers:[{name:'To',value:'client@example.com'},{name:'In-Reply-To',value:'<original@example.com>'}]}};
+ f.api.gmail=()=>({messages:[m,reply]});f.api.analyze=()=>{throw Error('MUST_NOT_SPEND_TOKENS');};
+ f.app.reconcile(f.db,f.cfg,'shared@example.org','thread1',0);
+ assert.equal(f.tables.Emails.find(r=>r.messageId==='real1').status,'replied');assert.equal(f.tables.Errors.length,0);
+});
+test('budget recovery retries only existing 413 failures once, without resetting mail or delivery history',()=>{
+ const f=fixture();f.db.setting=()=> 'production';f.api.aiRevision='single-message-v2';f.states.productionCutoff=500;
+ const row={id:'live',kind:'live',mailbox:'shared@example.org',receivedAt:1000,status:'awaiting',aiStatus:'pending',nextAiAt:999999,aiAttempts:20};
+ const other={...row,id:'other'},old={...row,id:'old',receivedAt:100},closed={...row,id:'closed',status:'no_reply_needed'},done={...row,id:'done',aiStatus:'complete'};
+ f.tables.Emails.push(row,other,old,closed,done);
+ for(const ref of ['live','old','closed','done']) f.tables.Errors.push({id:ref,component:'ai',code:'GROQ_HTTP_413',reference:ref});
+ f.tables.Reminders.push({id:'receipt',emailId:'live',stage:30,status:'sent',telegramMessageId:50});
+ const before=JSON.stringify(f.tables.Reminders);f.app.recoverAiBudget(f.db);
+ assert.equal(row.nextAiAt,0);assert.equal(row.receivedAt,1000);assert.equal(row.aiAttempts,20);
+ for(const r of [other,old,closed,done])assert.equal(r.nextAiAt,999999);
+ assert.equal(JSON.stringify(f.tables.Reminders),before);assert.equal(f.states['aiBudgetRecovery:single-message-v2'].queued,1);
+ row.nextAiAt=777777;f.app.recoverAiBudget(f.db);assert.equal(row.nextAiAt,777777);
+ f.db.setting=()=> 'test';f.api.aiRevision='later';f.app.recoverAiBudget(f.db);assert.ok(!f.states['aiBudgetRecovery:later']);
+});
 test('history cursor is not advanced when processing a thread fails',()=>{
   const f=fixture();f.states['gmail:shared@example.org']={historyId:'1',baseline:0,lastSync:0};
   f.api.gmail=(c,m,path)=>{if(path==='history')return {history:[{messagesAdded:[{message:{threadId:'t'}}]}],historyId:'2'};throw Error('GMAIL_HTTP_503');};
