@@ -20,6 +20,17 @@ var WpApp = (function () {
     }
     c.mailboxes=Array.from(new Set(c.employees.map(function(e){return e.email;})));
     if(c.mailboxes.length!==expectedMailboxCount || c.mailboxes.some(function(m){return !/^[a-z][a-z0-9.]*@wallpanels\.com$/.test(m);})) throw new Error('CONFIG_MAILBOXES');
+    if(c.employees.some(function(e){return e.additionalMailboxes && (!Array.isArray(e.additionalMailboxes) ||
+      e.additionalMailboxes.length>5 || e.additionalMailboxes.some(function(m){return c.mailboxes.indexOf(m)<0;}));})) throw new Error('CONFIG_MEMBERSHIPS');
+    if(c.employees.some(function(e){return (e.notificationsSince!==undefined && (!Number.isFinite(e.notificationsSince) || e.notificationsSince<=0)) ||
+      (e.mailboxSince && (typeof e.mailboxSince!=='object' || Array.isArray(e.mailboxSince) || Object.keys(e.mailboxSince).some(function(m){
+        return WpCore.employeeMailboxes(e).indexOf(m)<0 || !Number.isFinite(e.mailboxSince[m]) || e.mailboxSince[m]<=0;
+      })));})) throw new Error('CONFIG_MEMBERSHIP_EPOCH');
+    if(c.mailboxPolicies && (typeof c.mailboxPolicies!=='object' || Array.isArray(c.mailboxPolicies) || Object.keys(c.mailboxPolicies).some(function(m){
+      var v=c.mailboxPolicies[m];return c.mailboxes.indexOf(m)<0 || !v || !Number.isFinite(v.effectiveAt) || v.effectiveAt<=0 ||
+        !Array.isArray(v.stages) || v.stages.length!==3 || v.stages.some(function(n,i){return !Number.isInteger(n) || n<1 || n>1440 || (i>0 && n<=v.stages[i-1]);});
+    }))) throw new Error('CONFIG_SLA');
+    if(c.monitorMinutes!==undefined && [1,5].indexOf(c.monitorMinutes)<0) throw new Error('CONFIG_POLLING');
     if(c.adminIds.some(function(id){return c.employees.some(function(e){return String(e.telegramId)===String(id) && ['admin_test','admin_employee'].indexOf(e.role)<0;});})) throw new Error('CONFIG_ADMIN_OVERLAP');
     if(c.adminIds.map(String).indexOf(String(c.testAdminId))<0) throw new Error('CONFIG_TEST_ADMIN');
     if(c.mailExclusions && (!Array.isArray(c.mailExclusions) || c.mailExclusions.length>20 || c.mailExclusions.some(function(r){
@@ -51,6 +62,13 @@ var WpApp = (function () {
   function close(db,row,status,by,reason) {
     Object.assign(row,{status:status,closedAt:Date.now(),closedBy:String(by||'system'),closeReason:reason,updatedAt:Date.now()});
     db.save('Emails',row);
+    db.all('Reminders').filter(function(j){return j.emailId===row.id && ['pending','waiting_start'].includes(j.status);})
+      .forEach(function(j){j.status='cancelled';j.error=reason.indexOf('filter:')===0?'FILTERED:'+reason.slice(7):'CLOSED:'+reason;db.save('Reminders',j);});
+  }
+  function rowStages(db,c,row) {
+    var key='sla:'+row.id,saved=db.state(key);
+    if(!saved) {saved={stages:WpCore.reminderStages(c,row),at:Date.now()};db.state(key,saved);}
+    return saved.stages;
   }
   function analyze(db,c,row,messages,source) {
     if(exclude(db,c,row,source)) return;
@@ -178,7 +196,7 @@ var WpApp = (function () {
     var result=view==='admin'?[]:[[{text:'Open Gmail',url:WpCore.gmailUrl(row.mailbox,row.threadId)}]];
     if(view!=='admin' && (!admin || WpCore.authorized(c,recipient,row.mailbox) || mode==='test')) result.push([{text:'No Reply Needed',callback_data:'n:'+row.id}]);
     if(admin) {
-      c.employees.filter(function(e){return e.email===row.mailbox;}).forEach(function(e){
+      WpCore.owners(c,row.mailbox,row.receivedAt).forEach(function(e){
         result.push([{text:'Chat with Employee · '+e.name,url:e.username?'https://t.me/'+e.username.replace(/^@/,''):'tg://user?id='+e.telegramId}]);
       });
       result.push([{text:'Send Reminder',callback_data:'r:'+row.id}]);
@@ -187,7 +205,7 @@ var WpApp = (function () {
   }
   function queue(db,c,row,stage,mode,suffix,onlyEmployees) {
     var campaign=db.state('test247'),dual=WpTest.controls(campaign,row,mode);
-    var recipients=onlyEmployees?c.employees.filter(function(e){return e.email===row.mailbox;}).map(function(e){return String(e.telegramId);}):WpCore.recipients(c,row.mailbox,mode);
+    var recipients=onlyEmployees?WpCore.owners(c,row.mailbox,row.receivedAt).map(function(e){return String(e.telegramId);}):WpCore.recipients(c,row.mailbox,mode,row.receivedAt);
     if(mode==='test') recipients=[String(c.testAdminId)];
     recipients.forEach(function(to){
       (dual?(onlyEmployees?['employee']:['employee','admin']):[null]).forEach(function(view){
@@ -202,7 +220,8 @@ var WpApp = (function () {
     return {chat_id:String(job.recipient),parse_mode:'HTML',
       text:WpMessages.render(row,job,{testClock:testClock,
         elapsed:testClock?WpTest.minutes(db.state('test247'),row,at):WpCore.businessMinutes(row.receivedAt,at),
-        owner:c.employees.filter(function(e){return e.email===row.mailbox;}).map(function(e){return e.name;}).join(', '),
+        owner:WpCore.owners(c,row.mailbox,row.receivedAt).map(function(e){return e.name;}).join(', '),
+        stages:job.mode==='test'?[30,60,120]:rowStages(db,c,row),
         view:view||(c.adminIds.map(String).indexOf(String(job.recipient))>=0?'admin':'employee')}),
       reply_markup:keyboard(c,row,job.recipient,job.mode,view),link_preview_options:{is_disabled:true}};
   }
@@ -261,10 +280,10 @@ var WpApp = (function () {
       var row=db.all('Emails').find(function(e){return e.id===job.emailId;});
       var campaign=db.state('test247'),testClock=row && WpTest.controls(campaign,row,mode);
       if(mode==='production' && row && Number(row.receivedAt)<Number(db.state('productionCutoff')||0)) {job.status='cancelled';db.save('Reminders',job);continue;}
-      if(mode==='production' && row && WpCore.recipients(c,row.mailbox,mode).indexOf(String(job.recipient))<0) throw new Error('PRODUCTION_RECIPIENT_BLOCKED');
+      if(mode==='production' && row && WpCore.recipients(c,row.mailbox,mode,row.receivedAt).indexOf(String(job.recipient))<0) throw new Error('PRODUCTION_RECIPIENT_BLOCKED');
       if(mode==='test' && campaign && campaign.active && (!testClock || job.id.indexOf(':campaign-'+campaign.id+':')<0)) continue;
       if(mode==='test' && String(job.recipient)!==String(c.testAdminId)) throw new Error('TEST_RECIPIENT_BLOCKED');
-      if(row && !testClock && row.kind!=='synthetic' && [30,60,120].indexOf(Number(job.stage))>=0 && !WpCore.isWorking(Date.now())) continue;
+      if(row && !testClock && row.kind!=='synthetic' && WpCore.isSlaStage(job.stage) && !WpCore.isWorking(Date.now())) continue;
       if(!row || !current(db,c,row) || (mode==='production' && row.kind==='synthetic')) {
         job.status='cancelled';db.save('Reminders',job);continue;
       }
@@ -304,6 +323,9 @@ var WpApp = (function () {
     var c=config(),db=WpStore.open(c.sheetId),mode=db.setting('MODE');
     if(mode==='production' && PropertiesService.getScriptProperties().getProperty('WP_PRODUCTION_APPROVED')!=='yes') throw new Error('PRODUCTION_NOT_APPROVED');
     if(['test','production'].indexOf(mode)<0) return {paused:true};
+    // Minute polling is needed for short SLA stages, not for overnight/weekend Gmail scans.
+    // Leave history cursors intact so the next work window catches up on every incoming.
+    if(mode==='production' && !WpCore.isWorking(Date.now())) return {ok:true,mode:mode,mailboxes:c.mailboxes.length,paused:'outside_working_hours'};
     recoverAiBudget(db);
     if(mode==='test') activateTestRequest(db,c);
     var campaign=mode==='test'?db.state('test247'):null;
@@ -334,8 +356,9 @@ var WpApp = (function () {
         if(row.status!=='awaiting') continue;
         var stages=db.all('Reminders').filter(function(r){return r.emailId===row.id && r.mode===mode && r.status!=='cancelled' &&
           (!(campaign && campaign.active) || r.id.indexOf(':campaign-'+campaign.id+':')>=0);}).map(function(r){return +r.stage;});
-        Array.from(new Set(stages.filter(function(n){return [30,60,120].indexOf(n)>=0;}))).forEach(function(n){queue(db,c,row,n,mode);});
-        var due=WpTest.controls(campaign,row,mode)?WpTest.due(campaign,row,Date.now(),stages):WpCore.dueStage(row.receivedAt,Date.now(),stages);
+        Array.from(new Set(stages.filter(WpCore.isSlaStage))).forEach(function(n){queue(db,c,row,n,mode);});
+        var thresholds=mode==='production'?rowStages(db,c,row):[30,60,120];
+        var due=WpTest.controls(campaign,row,mode)?WpTest.due(campaign,row,Date.now(),stages):WpCore.dueStage(row.receivedAt,Date.now(),stages,thresholds);
         if(due) queue(db,c,row,due,mode);
       } catch(e){error(db,'reconcile',e,row.id);}
     }
@@ -424,8 +447,10 @@ var WpApp = (function () {
       db.state(command,{at:Date.now(),result:'registered'});
       WpApi.telegram(c.token,'sendMessage',{chat_id:who,text:'WallPanels Mail Control подключён.\n\n'+
         (isAdmin?'Роль: администратор. Вы получаете уведомления по всем подключённым ящикам.':'Вы получаете только уведомления по своей почте.')+
-        (owns.length?'\nВаша почта: '+owns.map(function(e){return e.email;}).join(', '):'')+
-        '\n\nГрафик: пн–пт, 09:00–19:00 America/New_York. Напоминания: 30, 60 и 120 рабочих минут. Ответ в Gmail или No Reply Needed прекращает контроль письма.'});return;
+        (owns.length?'\n\nВаша почта:\n'+Array.from(new Set(owns.reduce(function(all,e){return all.concat(WpCore.employeeMailboxes(e));},[]))).map(function(m){
+          var policy=(c.mailboxPolicies||{})[m];return m+' — '+(policy?policy.stages:[30,60,120]).join(' / ')+' рабочих мин.';
+        }).join('\n'):'')+
+        '\n\nГрафик: пн–пт, 09:00–19:00 America/New_York. Ответ из соответствующего Gmail или No Reply Needed прекращает контроль письма для всех получателей.'});return;
     }
     if(update.message && mode==='test' && c.testEmployee) {
       var message=update.message, commandKey='command:'+update.update_id;
@@ -506,7 +531,7 @@ var WpApp = (function () {
       else if(!old.role) {old.role=e.role||'employee';db.save('Employees',old);}
     });
     db.setting('TIMEZONE','America/New_York','Weekdays 09:00–19:00');
-    db.setting('REMINDER_MINUTES','30,60,120','Business minutes; polling adds up to five minutes');
+    db.setting('REMINDER_MINUTES','30,60,120','Default cumulative business minutes; mailbox overrides are in MAILBOX_POLICIES');
     var hook=WpApi.telegram(c.token,'getWebhookInfo');
     if(hook.url) throw new Error('EXISTING_WEBHOOK_REQUIRES_REVIEW');
     var bot=WpApi.telegram(c.token,'getMe');
@@ -529,7 +554,7 @@ var WpApp = (function () {
     var c=config(),db=WpStore.open(c.sheetId),h=db.state('health');
     if(!h || Date.now()-h.at>3600000 || !h.bot || !h.ai || h.webhook || h.mailboxes.length!==c.mailboxes.length ||
       h.mailboxes.some(function(m){return !m.ok || c.mailboxes.indexOf(m.mailbox)<0;})) throw new Error('HEALTH_GATE');
-    var expected={wpMonitor:5,wpTelegramUpdates:1}, ts=ScriptApp.getProjectTriggers();
+    var expected={wpMonitor:c.monitorMinutes||5,wpTelegramUpdates:1}, ts=ScriptApp.getProjectTriggers();
     Object.keys(expected).forEach(function(name){
       if(!ts.some(function(t){return t.getHandlerFunction()===name;})) ScriptApp.newTrigger(name).timeBased().everyMinutes(expected[name]).create();
     });
@@ -563,7 +588,7 @@ var WpApp = (function () {
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,enableProduction:enableProduction,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
-    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget,exclude:exclude};
+    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget,exclude:exclude,rowStages:rowStages};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}

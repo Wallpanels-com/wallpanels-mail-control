@@ -29,7 +29,7 @@ if(command==='prepare') {
   else if(fs.existsSync(stage+'/TestResume.js')) fs.unlinkSync(stage+'/TestResume.js');
   if(process.argv.includes('--acceptance')) fs.copyFileSync('.local/AcceptanceRequest.js',stage+'/AcceptanceRequest.js');
   else if(fs.existsSync(stage+'/AcceptanceRequest.js')) fs.unlinkSync(stage+'/AcceptanceRequest.js');
-  if(process.argv.includes('--production')) fs.copyFileSync('.local/ProductionRequest.js',stage+'/ProductionRequest.js');
+  if(process.argv.includes('--production') || process.argv.includes('--pm')) fs.copyFileSync(process.argv.includes('--pm')?'.local/PmRequest.js':'.local/ProductionRequest.js',stage+'/ProductionRequest.js');
   else if(fs.existsSync(stage+'/ProductionRequest.js')) fs.unlinkSync(stage+'/ProductionRequest.js');
   fs.writeFileSync('.clasp.json',JSON.stringify({...config,rootDir:stage},null,2)+'\n');
   const hash=crypto.createHash('sha256');

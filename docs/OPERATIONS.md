@@ -9,10 +9,14 @@
 5. Run `wpHealth`: tests read-only access to all configured mailboxes, bot identity, webhook state and a synthetic Groq customer request. Detailed private results are stored as `Sync_State/health`.
 6. Run `wpMonitor` once to establish initial history baselines, with no historic backlog. The approved optional test-admin mailbox receives its own independent baseline.
 7. In test mode run `wpSyntheticTest`. This creates a synthetic expectation and sends a single interactive message only to the test admin. Check Send Reminder before No Reply Needed, then confirm the closure record and callback receipt in Sheets.
-8. Run `wpInstallTriggers` after health succeeds. Confirm `wpMonitor` every five minutes and `wpTelegramUpdates` every minute in project Triggers and Executions. Existing unrelated triggers are preserved.
+8. Run `wpInstallTriggers` after health succeeds. Confirm `wpMonitor` at `WP_CONFIG_JSON.monitorMinutes` (currently one minute; legacy default five) and `wpTelegramUpdates` every minute in project Triggers and Executions. Existing unrelated triggers are preserved. Minute-trigger replacement during the shared-mailbox migration is explicit, checkpointed and restricted to the old monitor's recorded ID.
 9. Before any production rollout, complete agreed live-message checks and obtain separate owner authorization. Until then, leave `MODE=test` and omit `WP_PRODUCTION_APPROVED`.
 
 ## Production onboarding and cutover
+
+Shared-mailbox membership is expressed by an owner's primary `email` and optional `additionalMailboxes`, always restricted to already approved mailbox addresses. `notificationsSince` (new owner) and `mailboxSince[mailbox]` (new additional membership) prevent stale expectations from generating a new-member backlog. The existing Employees row retains the primary email. Additional assignments are recorded in `Settings/EXTRA_MAILBOXES:<employeeId>`; no tabs or columns are added.
+
+`mailboxPolicies[mailbox]` contains an immutable activation `effectiveAt` and three ascending cumulative `stages`. The policy applies by the original incoming receipt time, not script restart time. `Sync_State/sla:<emailId>` pins the chosen stages for each expectation, so future config changes do not alter its clock. `Settings/MAILBOX_POLICIES` and `MONITOR_MINUTES` mirror the active private config. Start lists only that user's permitted mailboxes and each mailbox's SLA. No Reply Needed and an actual SENT reply from the monitored Gmail cancel all pending/Start-held deliveries for the same incoming, while sent/unknown receipts survive.
 
 For an authorized incremental employee addition, update the private roster and its explicit base-owner/mailbox counts together. Validate the new mailbox with the existing read-only delegation, append only the new Employees row, and initialize only its Gmail cursor. Do not reset MODE, the production cutoff, existing cursors or Telegram readiness. A new recipient must press Start.
 

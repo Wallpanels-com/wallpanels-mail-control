@@ -35,3 +35,16 @@ test('new roster counts retain duplicate-ID, mailbox and admin safeguards',()=>{
  cfg.employees[7].telegramId='10';assert.throws(()=>ctx.WpApp.config(),/CONFIG_ROSTER/);cfg.employees[7].telegramId='17';
  cfg.mailExclusions[0]={...rule,subjectPattern:'anything'};assert.throws(()=>ctx.WpApp.config(),/CONFIG_EXCLUSIONS/);
 });
+test('extra memberships, SLA ordering and polling cadence cannot bypass the mailbox allowlist',()=>{
+ const cfg={projectId:'wallpanels-gmail-control',sheetId:'fake',serviceAccount:'test@wallpanels-gmail-control.iam.gserviceaccount.com',
+  employees:['one','two','three','four','five','shared','shared'].map((s,i)=>({id:'e'+i,email:s+'@wallpanels.com',telegramId:String(10+i)})),
+  adminIds:['3','4'],testAdminId:'3'};
+ const ctx=vm.createContext({WpCore:core,console,PropertiesService:{getScriptProperties:()=>({getProperty:k=>k==='WP_CONFIG_JSON'?JSON.stringify(cfg):'FAKE'})}});
+ vm.runInContext(fs.readFileSync('src/App.js','utf8'),ctx);
+ cfg.employees[0].additionalMailboxes=['unapproved@wallpanels.com'];assert.throws(()=>ctx.WpApp.config(),/CONFIG_MEMBERSHIPS/);
+ cfg.employees[0].additionalMailboxes=['shared@wallpanels.com'];cfg.employees[0].mailboxSince={'unapproved@wallpanels.com':1};
+ assert.throws(()=>ctx.WpApp.config(),/CONFIG_MEMBERSHIP_EPOCH/);cfg.employees[0].mailboxSince={'shared@wallpanels.com':1};
+ cfg.mailboxPolicies={'shared@wallpanels.com':{effectiveAt:1,stages:[5,5,15]}};assert.throws(()=>ctx.WpApp.config(),/CONFIG_SLA/);
+ cfg.mailboxPolicies['shared@wallpanels.com'].stages=[5,10,15];cfg.monitorMinutes=2;assert.throws(()=>ctx.WpApp.config(),/CONFIG_POLLING/);
+ cfg.monitorMinutes=1;assert.equal(ctx.WpApp.config().mailboxes.length,6);
+});

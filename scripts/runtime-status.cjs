@@ -14,7 +14,7 @@ async function main(){
   const filter='timestamp >= "'+since+'"'+(until?' AND timestamp <= "'+new Date(until).toISOString()+'"':'');
   const result=[];let pageToken;
   const allowed=['ok','mode','employees','mailboxes','gmailOk','gmailTotal','bot','ai','webhook','triggers','health',
-    'monitoredMailboxes','syntheticStatus','deliveries','unsafeRecipients','monitorLastSuccess','updatesLastSuccess','errorCount',
+    'monitoredMailboxes','syntheticStatus','deliveries','unsafeRecipients','monitorLastSuccess','updatesLastSuccess','errorCount','paused',
     'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed','acceptanceAudit','productionActivated','phase','admins','productionStatus','aiPending','aiRecovery','maintenance'];
   do{
     const response=await auth.request({url:'https://logging.googleapis.com/v2/entries:list',method:'POST',data:{

@@ -77,22 +77,37 @@ var WpCore = (function () {
   function gmailUrl(mailbox,thread) {
     return 'https://mail.google.com/mail/u/?authuser='+encodeURIComponent(mailbox)+'#all/'+encodeURIComponent(thread);
   }
-  function authorized(config, user, mailbox) {
-    return config.employees.some(function(e){return String(e.telegramId)===String(user) && e.email===mailbox;});
+  function employeeMailboxes(employee) {
+    return Array.from(new Set([employee.email].concat(employee.additionalMailboxes||[])));
   }
-  function recipients(config, mailbox, mode) {
+  function owners(config,mailbox,receivedAt) {
+    return config.employees.filter(function(e){
+      var since=(e.mailboxSince||{})[mailbox]||e.notificationsSince||0;
+      return employeeMailboxes(e).indexOf(mailbox)>=0 && (receivedAt===undefined || Number(receivedAt)>=Number(since));
+    });
+  }
+  function reminderStages(config,row) {
+    var policy=(config.mailboxPolicies||{})[row.mailbox];
+    return policy && Number(row.receivedAt)>=Number(policy.effectiveAt)?policy.stages.slice():[30,60,120];
+  }
+  function isSlaStage(value) {return Number.isInteger(Number(value)) && Number(value)>0;}
+  function authorized(config, user, mailbox) {
+    return owners(config,mailbox).some(function(e){return String(e.telegramId)===String(user);});
+  }
+  function recipients(config, mailbox, mode,receivedAt) {
     if(mode==='test') return [String(config.testAdminId)];
-    var ids = config.employees.filter(function(e){return e.email===mailbox;}).map(function(e){return String(e.telegramId);})
+    var ids = owners(config,mailbox,receivedAt).map(function(e){return String(e.telegramId);})
       .concat(config.adminIds.map(String));
     return Array.from(new Set(ids));
   }
-  function dueStage(received,now,sentStages) {
+  function dueStage(received,now,sentStages,thresholds) {
     if(!isWorking(now)) return 0;
-    var elapsed=businessMinutes(received,now), due=[30,60,120].filter(function(n){return elapsed>=n && sentStages.indexOf(n)<0;});
+    var elapsed=businessMinutes(received,now), due=(thresholds||[30,60,120]).filter(function(n){return elapsed>=n && sentStages.indexOf(n)<0;});
     return due.length ? due[0] : 0; // At most one new stage per monitoring run after an outage.
   }
   return {businessMinutes:businessMinutes,isWorking:isWorking,header:header,addresses:addresses,
     incoming:incoming,exclusion:exclusion,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
+    employeeMailboxes:employeeMailboxes,owners:owners,reminderStages:reminderStages,isSlaStage:isSlaStage,
     authorized:authorized,recipients:recipients,dueStage:dueStage};
 })();
 if(typeof module!=='undefined') module.exports=WpCore;

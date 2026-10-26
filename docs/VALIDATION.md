@@ -1,5 +1,13 @@
 # Validation record
 
+## 26 October shared PM group and short SLA
+
+The owner authorized one additional PM owner, a second mailbox for an existing owner and cumulative 5/10/15-business-minute reminders for new shared-mailbox mail. Existing recipients, administrators, filters, primary mailboxes and the New York work calendar were preserved. Additional membership is kept in private config and mirrored to the existing Settings tab; Employees retains its seven-column schema.
+
+The production migration completed at 17:49:31 UTC, with an immutable activation cutoff of 17:49:23 UTC. It confirmed four shared-mailbox employees, six recipients including both administrators, ten mailbox-owner identities over eight distinct Gmail accounts, and exactly one monitor plus one Telegram-update trigger. The monitor was replaced with a one-minute trigger. Three existing shared-mailbox users were ready; the new owner still required Start. The cumulative Error count remained 182 and the Employees header was unchanged.
+
+All 96 tests passed, including dual-mailbox isolation, membership cutoffs/no stale backlog, 5/10/15 cumulative work-time stages, overnight/weekend pause, saved legacy stages, unique reservations, role-specific cards, shared closure by each owner, SENT-reply closure and Start releasing only the latest held stage. A regular-monitor integration test advanced through all three stages twice each: each recipient received exactly one synthetic delivery per stage, with no AI reanalysis. A private migration simulation verified old cursors/jobs/config backups, no external sends, and recovery after trigger creation without duplicating the trigger. No real Gmail test message was generated and no synthetic acceptance messages were sent to employees.
+
 ## 26 October global noise filtering and roster addition
 
 The owner authorized one new mailbox owner and noise reduction across every configured account. Read-only Gmail inspection covered 30 incoming copies across the seven existing mailboxes during 13:12–17:12 UTC. Six were CRM lead/call assignments, one an authentication notice and two confirmed unsolicited vendor pitches. Client/project correspondence and actionable Drive access requests were retained. The new mailbox had zero incoming messages in a separate four-hour read-only check at 17:25 UTC. Read-only profile checks passed for all eight mailboxes.

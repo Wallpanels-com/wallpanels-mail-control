@@ -50,9 +50,9 @@ var WpRollout = (function () {
   function release(db,user) {
     var jobs=db.all('Reminders').filter(function(j){return j.mode==='production' && String(j.recipient)===String(user) && ['pending','waiting_start'].indexOf(j.status)>=0;});
     var latest={};
-    jobs.forEach(function(j){var group=j.emailId+':'+([30,60,120].indexOf(Number(j.stage))>=0?'sla':j.stage);
+    jobs.forEach(function(j){var group=j.emailId+':'+(Number.isInteger(Number(j.stage)) && Number(j.stage)>0?'sla':j.stage);
       if(!latest[group] || Number(j.stage)>=Number(latest[group].stage) || j.stage==='manual') latest[group]=j;});
-    jobs.forEach(function(j){var group=j.emailId+':'+([30,60,120].indexOf(Number(j.stage))>=0?'sla':j.stage);
+    jobs.forEach(function(j){var group=j.emailId+':'+(Number.isInteger(Number(j.stage)) && Number(j.stage)>0?'sla':j.stage);
       j.status=latest[group]===j?'pending':'superseded';db.save('Reminders',j);});
   }
   return {activate:activate,release:release};
