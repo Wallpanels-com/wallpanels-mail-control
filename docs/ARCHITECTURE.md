@@ -25,6 +25,8 @@ Notifications follow `pending → sending → sent`. Explicit rate limits return
 
 Callback mutations are durable before acknowledgement. A repeated No Reply Needed callback cannot reopen or close another message. Manual reminders have callback-specific delivery keys and a five-minute cooldown. Expired callback acknowledgements are ignored to keep the update offset moving. Telegram offsets advance only after successful handling of that update.
 
+Production PM mail has separate per-recipient dismissal state in Sync_State, keyed by expectation ID and Telegram ID. Its No Reply Needed callback leaves the shared Emails status untouched and cancels only the clicking owner's unsent reservations. Both queue creation and dispatch consult that durable state, so retries, manual reminders and Start cannot bypass it. Shared-Gmail SENT reply detection still closes the expectation globally. Each new incoming has a new expectation ID; it does not inherit earlier dismissals. Other mailboxes and test mode keep the global button semantics.
+
 ## Existing infrastructure boundary
 
 The deployment helper refuses a script ID other than the explicitly approved existing project. Existing source files are retained and backed up privately. No cloud provisioning, new database or mailbox access outside the configured allowlist is used. Production is gated by a separate Script Property and operating mode; test routing always resolves to one administrator.

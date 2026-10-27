@@ -70,7 +70,7 @@ test('Start releases only latest held short SLA, not a burst of 5/10/15',()=>{
  const f=fixture();f.tables.Reminders=[5,10,15].map(stage=>({id:String(stage),stage,emailId:'e',recipient:'2',mode:'production',status:'waiting_start'}));
  R.release(f.db,'2');assert.deepEqual(f.tables.Reminders.map(j=>j.status),['superseded','superseded','pending']);
 });
-test('No Reply Needed by any shared owner closes for everyone and cancels unsent jobs',()=>{
+test('other shared mailboxes retain global No Reply Needed closure and unsent-job cancellation',()=>{
  for(const user of ['1','2','3','4']){
   const f=fixture(),row={id:'a'.repeat(20),mailbox:'shared@example.org',receivedAt:cut,status:'awaiting',kind:'live'};
   f.tables.Emails.push(row);f.app.queue(f.db,f.cfg,row,5,'production');

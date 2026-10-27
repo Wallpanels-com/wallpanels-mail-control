@@ -77,6 +77,16 @@ var WpApp = (function () {
     });
     return count;
   }
+  function dismissalKey(row,recipient,mode) {return 'recipientDismissal:'+mode+':'+row.id+':'+String(recipient);}
+  function dismissed(db,row,recipient,mode) {
+    return WpCore.personalNoReply(row.mailbox,mode) && !!db.state(dismissalKey(row,recipient,mode));
+  }
+  function dismissRecipient(db,row,recipient,mode) {
+    var key=dismissalKey(row,recipient,mode);
+    if(!db.state(key))db.state(key,{at:Date.now(),by:String(recipient),mailbox:row.mailbox,messageId:row.messageId});
+    db.all('Reminders').filter(function(j){return j.emailId===row.id && j.mode===mode && String(j.recipient)===String(recipient) &&
+      ['pending','waiting_start'].includes(j.status);}).forEach(function(j){j.status='cancelled';j.error='DISMISSED_BY_RECIPIENT';db.save('Reminders',j);});
+  }
   function rowStages(db,c,row) {
     var key='sla:'+row.id,saved=db.state(key);
     if(!saved) {saved={stages:WpCore.reminderStages(c,row),at:Date.now()};db.state(key,saved);}
@@ -222,6 +232,7 @@ var WpApp = (function () {
     var recipients=onlyEmployees?WpCore.owners(c,row.mailbox,row.receivedAt).map(function(e){return String(e.telegramId);}):WpCore.recipients(c,row.mailbox,mode,row.receivedAt);
     if(mode==='test') recipients=[String(c.testAdminId)];
     recipients.forEach(function(to){
+      if(dismissed(db,row,to,mode))return;
       (dual?(onlyEmployees?['employee']:['employee','admin']):[null]).forEach(function(view){
       var key=row.id+':'+stage+':'+to+':'+mode+(dual?':campaign-'+campaign.id+':view-'+view:'')+(suffix?':'+suffix:'');
       if(db.all('Reminders').some(function(r){return r.id===key;})) return;
@@ -236,6 +247,7 @@ var WpApp = (function () {
         elapsed:testClock?WpTest.minutes(db.state('test247'),row,at):WpCore.businessMinutes(row.receivedAt,at),
         owner:WpCore.owners(c,row.mailbox,row.receivedAt).map(function(e){return e.name;}).join(', '),
         stages:job.mode==='test'?[30,60,120]:rowStages(db,c,row),
+        personalNoReply:WpCore.personalNoReply(row.mailbox,job.mode),
         view:view||(c.adminIds.map(String).indexOf(String(job.recipient))>=0?'admin':'employee')}),
       reply_markup:keyboard(c,row,job.recipient,job.mode,view),link_preview_options:{is_disabled:true}};
   }
@@ -288,11 +300,15 @@ var WpApp = (function () {
     var jobs=db.all('Reminders');
     for(var i=0;i<jobs.length && budget();i++) {
       var job=jobs[i];
+      if(job.mode!==mode || !['pending','waiting_start'].includes(job.status))continue;
+      var row=db.all('Emails').find(function(e){return e.id===job.emailId;});
+      if(row && dismissed(db,row,job.recipient,mode)) {
+        job.status='cancelled';job.error='DISMISSED_BY_RECIPIENT';db.save('Reminders',job);continue;
+      }
       if(mode==='production' && job.mode===mode && job.status==='waiting_start' && (db.state('telegramReady:'+job.recipient)||{}).active) {
         job.status='pending';db.save('Reminders',job);
       }
       if(job.mode!==mode || job.status!=='pending' || +job.nextAttemptAt>Date.now()) continue;
-      var row=db.all('Emails').find(function(e){return e.id===job.emailId;});
       var campaign=db.state('test247'),testClock=row && WpTest.controls(campaign,row,mode);
       if(mode==='production' && row && Number(row.receivedAt)<Number(db.state('productionCutoff')||0)) {job.status='cancelled';db.save('Reminders',job);continue;}
       if(mode==='production' && row && WpCore.recipients(c,row.mailbox,mode,row.receivedAt).indexOf(String(job.recipient))<0) throw new Error('PRODUCTION_RECIPIENT_BLOCKED');
@@ -466,7 +482,10 @@ var WpApp = (function () {
         (owns.length?'\n\nВаша почта:\n'+Array.from(new Set(owns.reduce(function(all,e){return all.concat(WpCore.employeeMailboxes(e));},[]))).map(function(m){
           var policy=(c.mailboxPolicies||{})[m];return m+' — '+(policy?policy.stages:[30,60,120]).join(' / ')+' рабочих мин.';
         }).join('\n'):'')+
-        '\n\nГрафик: пн–пт, 09:00–19:00 America/New_York. Ответ из соответствующего Gmail или No Reply Needed прекращает контроль письма для всех получателей.'});return;
+        '\n\nГрафик: пн–пт, 09:00–19:00 America/New_York. Ответ из соответствующего Gmail прекращает контроль письма для всех получателей.'+
+        (owns.some(function(e){return WpCore.employeeMailboxes(e).some(function(m){return WpCore.personalNoReply(m,mode);});})?
+          '\nNo Reply Needed для общей PM-почты отключает напоминания только вам, по одному входящему письму. Для остальных ящиков кнопка закрывает ожидание целиком.':
+          '\nNo Reply Needed закрывает ожидание письма для всех получателей.')});return;
     }
     if(update.message && mode==='test' && c.testEmployee) {
       var message=update.message, commandKey='command:'+update.update_id;
@@ -511,10 +530,16 @@ var WpApp = (function () {
     var acknowledgement='Ожидание закрыто.';
     if(!db.state('callback:'+cb.id)) {
       if(match[1]==='n') {
-        if(row.status==='awaiting') close(db,row,'no_reply_needed',user,'employee_button');
+        if(row.status==='awaiting') {
+          if(WpCore.personalNoReply(row.mailbox,mode)) {
+            dismissRecipient(db,row,user,mode);acknowledgement='Напоминания по этому письму отключены только для вас.';
+          } else close(db,row,'no_reply_needed',user,'employee_button');
+        }
       } else if(admin && current(db,c,row)) {
         var last=db.state('manual:'+row.id)||0;
-        if(!last || Date.now()-last>=300000) {
+        if(WpCore.personalNoReply(row.mailbox,mode) && !WpCore.owners(c,row.mailbox,row.receivedAt).some(function(e){return !dismissed(db,row,e.telegramId,mode);})) {
+          acknowledgement='Все сотрудники отключили напоминания по этому письму.';
+        } else if(!last || Date.now()-last>=300000) {
           queue(db,c,row,'manual',mode,cb.id,true);db.state('manual:'+row.id,Date.now());
           acknowledgement='Напоминание поставлено в очередь.';
         } else acknowledgement='Ручное напоминание уже запрошено. Повторите через '+Math.ceil((300000-(Date.now()-last))/60000)+' мин.';

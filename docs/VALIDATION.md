@@ -1,5 +1,15 @@
 # Validation record
 
+## 27 October individual PM dismissals
+
+Owner-requested production change: No Reply Needed for the shared PM mailbox suppresses only the clicking employee's reminders for one incoming. Other owners and administrators continue; a real shared-Gmail SENT reply closes for everyone. New incoming mail starts without previous dismissals. The normal 5/10/15 business-minute stages, memberships, filtering and all other mailboxes are preserved. Previously closed expectations are not reopened.
+
+All 115 local tests and syntax/manifest checks pass. Ten new integration cases cover every PM's independent action, two concurrent dismissals with continued 10/15-minute deliveries to the remaining owners and admins, manual reminder filtering, all-four dismissal with admin oversight, SENT-reply closure, new same-thread incoming both before and after an answer, persistence across runtime restart and Start, pending/manual cancellation with sent/unknown preservation, forged callbacks, the dual owner's personal mailbox and unchanged administrator-only test behavior. Repeated runs do not duplicate the next stages or spend AI tokens on completed analyses. These use synthetic APIs and do not claim a live employee button click.
+
+The production acceptance receipt completed at 17:33:21 UTC in `Sync_State/acceptanceAudit:pm-personal-no-reply-20261027-v1`: the four approved PM owners, two administrators, eight mailboxes and ten owner identities were retained, PM stages remained 5/10/15, and only production PM mail enabled personal dismissal. Cumulative Errors stayed 182, pending AI was zero and regular monitoring succeeded after upload. The check did not send test messages, modify configuration or reopen old mail.
+
+Final runtime source parity was confirmed, the private acceptance helper removed and Apps Script version 14 saved. Existing time-driven triggers run the updated HEAD.
+
 ## 27 October production mail and delivery audit
 
 Fresh corporate-only inspection covered 64 incoming Gmail copies across all eight monitored mailboxes over 24 hours. The database audit inspected 66 recent incoming rows and 420 recorded production deliveries; there were zero duplicate email/job keys and zero recipients outside the approved mailbox routing. LinkedIn/Alibaba newsletters, new CRM assignments, a shared-folder FYI and a delivery-failure notice had no reminder deliveries. Real customer and applicant correspondence was retained.

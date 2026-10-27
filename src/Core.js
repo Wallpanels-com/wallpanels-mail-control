@@ -98,6 +98,7 @@ var WpCore = (function () {
     return policy && Number(row.receivedAt)>=Number(policy.effectiveAt)?policy.stages.slice():[30,60,120];
   }
   function isSlaStage(value) {return Number.isInteger(Number(value)) && Number(value)>0;}
+  function personalNoReply(mailbox,mode) {return mode==='production' && mailbox==='pm@wallpanels.com';}
   function authorized(config, user, mailbox) {
     return owners(config,mailbox).some(function(e){return String(e.telegramId)===String(user);});
   }
@@ -114,7 +115,7 @@ var WpCore = (function () {
   }
   return {businessMinutes:businessMinutes,isWorking:isWorking,header:header,addresses:addresses,
     incoming:incoming,exclusion:exclusion,bulkEvidence:bulkEvidence,replied:replied,eventKey:eventKey,normalizeAI:normalizeAI,gmailUrl:gmailUrl,
-    employeeMailboxes:employeeMailboxes,owners:owners,reminderStages:reminderStages,isSlaStage:isSlaStage,
+    employeeMailboxes:employeeMailboxes,owners:owners,reminderStages:reminderStages,isSlaStage:isSlaStage,personalNoReply:personalNoReply,
     authorized:authorized,recipients:recipients,dueStage:dueStage};
 })();
 if(typeof module!=='undefined') module.exports=WpCore;

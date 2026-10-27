@@ -23,6 +23,7 @@ var WpMessages = (function () {
       '\n🔔 <b>Этап:</b> '+stage(job.stage,options.stages),
       '🤖 <b>AI Summary</b>\n'+field(row.summary||'Анализ ожидается.',750)];
     if(row.reason) blocks.push('💬 <b>Почему нужен ответ</b>\n'+field(row.reason,300));
+    if(options.personalNoReply && !admin) blocks.push('🔕 No Reply Needed отключает напоминания по этому письму только вам.');
     blocks.push('<i>WallPanels Mail Control</i>');
     return blocks.join('\n\n');
   }
