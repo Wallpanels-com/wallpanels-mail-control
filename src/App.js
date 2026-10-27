@@ -37,7 +37,9 @@ var WpApp = (function () {
       if(!/^[a-z0-9_-]{1,60}$/.test(r.id) || typeof r.sender!=='string' || r.sender!==r.sender.toLowerCase() ||
         WpCore.addresses(r.sender).length!==1 || typeof r.subjectPattern!=='string' || r.subjectPattern.length>240 ||
         !r.subjectPattern.startsWith('^') || !r.subjectPattern.endsWith('$') || !['system','marketing'].includes(r.category) ||
-        typeof r.reason!=='string' || r.reason.length>200) return true;
+        typeof r.reason!=='string' || r.reason.length>200 ||
+        (r.messageId!==undefined && (typeof r.messageId!=='string' || !/^[a-f0-9]{12,64}$/.test(r.messageId))) ||
+        (r.mailbox!==undefined && c.mailboxes.indexOf(r.mailbox)<0)) return true;
       try {new RegExp(r.subjectPattern,'i');return false;}catch(_){return true;}
     }))) throw new Error('CONFIG_EXCLUSIONS');
     c.token=p.getProperty('TELEGRAM_BOT_TOKEN'); c.groq=p.getProperty('GROQ_API_KEY');
@@ -65,6 +67,16 @@ var WpApp = (function () {
     db.all('Reminders').filter(function(j){return j.emailId===row.id && ['pending','waiting_start'].includes(j.status);})
       .forEach(function(j){j.status='cancelled';j.error=reason.indexOf('filter:')===0?'FILTERED:'+reason.slice(7):'CLOSED:'+reason;db.save('Reminders',j);});
   }
+  function retireClosed(db,mode) {
+    var rows={};db.all('Emails').forEach(function(r){rows[r.id]=r;});var count=0;
+    db.all('Reminders').filter(function(j){return j.mode===mode && ['pending','waiting_start'].includes(j.status);}).forEach(function(j){
+      var row=rows[j.emailId];if(row && row.status==='awaiting')return;
+      var key='closedOutbox:'+j.id;
+      if(!db.state(key))db.state(key,{at:Date.now(),previousStatus:j.status,previousError:j.error||'',rowStatus:row?row.status:'missing'});
+      j.status='cancelled';j.error='CLOSED:'+(row?row.status:'missing');db.save('Reminders',j);count++;
+    });
+    return count;
+  }
   function rowStages(db,c,row) {
     var key='sla:'+row.id,saved=db.state(key);
     if(!saved) {saved={stages:WpCore.reminderStages(c,row),at:Date.now()};db.state(key,saved);}
@@ -76,7 +88,7 @@ var WpApp = (function () {
     aiCalls++;
     try {
       var v=WpApi.analyze(messages,source,c.groq);
-      db.state('aiDecision:'+row.id,{revision:'bulk-mail-v3',at:Date.now(),requiresReply:v.requires_reply,
+      db.state('aiDecision:'+row.id,{revision:'reply-intent-v4',at:Date.now(),requiresReply:v.requires_reply,
         isCustomer:v.is_customer,category:v.category,mailingList:WpCore.bulkEvidence(source)});
       Object.assign(row,{aiStatus:'complete',category:v.category,summary:v.summary,reason:v.reason,updatedAt:Date.now()});
       if(!v.requires_reply) close(db,row,'not_required','ai',v.reason);
@@ -89,7 +101,7 @@ var WpApp = (function () {
     }
   }
   function exclude(db,c,row,source) {
-    var rule=WpCore.exclusion(source,c.mailExclusions);
+    var rule=WpCore.exclusion(source,c.mailExclusions,row.mailbox);
     if(!rule || (row.status!=='awaiting' && !(row.status==='not_required' && row.closeReason==='filter:'+rule.id))) return false;
     if(row.status==='awaiting') {
       // Persist recovery evidence before closing. A retry also finishes partially cancelled jobs.
@@ -272,6 +284,7 @@ var WpApp = (function () {
     }
   }
   function dispatch(db,c,mode) {
+    retireClosed(db,mode);
     var jobs=db.all('Reminders');
     for(var i=0;i<jobs.length && budget();i++) {
       var job=jobs[i];
@@ -325,6 +338,7 @@ var WpApp = (function () {
     var c=config(),db=WpStore.open(c.sheetId),mode=db.setting('MODE');
     if(mode==='production' && PropertiesService.getScriptProperties().getProperty('WP_PRODUCTION_APPROVED')!=='yes') throw new Error('PRODUCTION_NOT_APPROVED');
     if(['test','production'].indexOf(mode)<0) return {paused:true};
+    var outboxRetired=retireClosed(db,mode);
     // Minute polling is needed for short SLA stages, not for overnight/weekend Gmail scans.
     // Leave history cursors intact so the next work window catches up on every incoming.
     if(mode==='production' && !WpCore.isWorking(Date.now())) return {ok:true,mode:mode,mailboxes:c.mailboxes.length,paused:'outside_working_hours'};
@@ -370,7 +384,7 @@ var WpApp = (function () {
     if(campaign && campaign.active) console.log(JSON.stringify({test247:true,startedAt:campaign.startedAt,status:(db.all('Emails').find(function(r){return r.messageId===campaign.messageId;})||{}).status,
       stages:db.all('Reminders').filter(function(r){return r.id.indexOf(':campaign-'+campaign.id+':')>=0;}).map(function(r){return {stage:r.stage,view:WpTest.view(r),status:r.status};})}));
     return {ok:true,mode:mode,mailboxes:monitored.length,active:open.length,
-      aiPending:open.filter(function(r){return r.status==='awaiting' && r.aiStatus!=='complete';}).length,errorCount:db.all('Errors').length};
+      aiPending:open.filter(function(r){return r.status==='awaiting' && r.aiStatus!=='complete';}).length,errorCount:db.all('Errors').length,outboxRetired:outboxRetired};
   });}
   function activateTestRequest(db,c) {
     if(typeof wpTestRequest!=='function') return;
@@ -590,7 +604,7 @@ var WpApp = (function () {
   return {config:config,setup:setup,monitor:monitor,updates:updates,health:health,installTriggers:installTriggers,acceptanceAudit:acceptanceAudit,enableProduction:enableProduction,
     syntheticTest:syntheticTest,handle:handle,current:current,queue:queue,dispatch:dispatch,reconcile:reconcile,sync:sync,
     activateTestRequest:activateTestRequest,testTick:testTick,keyboard:keyboard,resumeTestRequest:resumeTestRequest,
-    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget,exclude:exclude,rowStages:rowStages};
+    refreshTestMessages:refreshTestMessages,recoverAiBudget:recoverAiBudget,exclude:exclude,rowStages:rowStages,retireClosed:retireClosed};
 })();
 function wpSetup() {return WpApp.setup();}
 function wpMonitor() {var result=WpApp.monitor(); console.log(JSON.stringify(result));return result;}

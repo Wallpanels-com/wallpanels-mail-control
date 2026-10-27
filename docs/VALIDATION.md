@@ -1,5 +1,19 @@
 # Validation record
 
+## 27 October production mail and delivery audit
+
+Fresh corporate-only inspection covered 64 incoming Gmail copies across all eight monitored mailboxes over 24 hours. The database audit inspected 66 recent incoming rows and 420 recorded production deliveries; there were zero duplicate email/job keys and zero recipients outside the approved mailbox routing. LinkedIn/Alibaba newsletters, new CRM assignments, a shared-folder FYI and a delivery-failure notice had no reminder deliveries. Real customer and applicant correspondence was retained.
+
+One completed-payment receipt had generated ten unnecessary deliveries before its owner marked No Reply Needed. A reviewed exact-sender/subject exclusion now prevents recurrence, and the AI prompt distinguishes optional contact-us footers from real payment problems. A second reviewed acknowledgment included a large unquoted history; only its exact mailbox/message was closed, preserving future questions from the same sender/thread. Its pre-existing ambiguous Telegram receipt was preserved without resending.
+
+Five old Start-held reservations referenced already-replied mail. The new regular-monitor reconciliation retired all five at 17:20:17 UTC, retaining cancellation evidence. The scoped repair completed at 17:20:25 UTC: one reviewed incoming closed, zero stale closed reservations, zero active marketing expectations, eight mailboxes and ten owner identities. Roles, PM/default SLA policies, production cutoff and cursors were preserved. Historical sends and errors were retained.
+
+All 105 local tests and syntax/manifest checks pass. A private migration simulation also verifies replay safety, future same-thread questions, preserved unknown receipts and no external sends. Ten live synthetic Groq cases passed after the actual postprocessor, including completed payment versus failed payment, client document access, complaints and long newsletters versus long actionable mail. Total observed usage was 6,206 tokens; largest request 4,422 bytes, within the unchanged 4,500-byte/600-completion-token limits.
+
+Two temporary Google server exceptions occurred during the reviewed working-hours window (four over the calendar day); subsequent runs recovered. Cumulative application Errors remained 182 with no new application errors in that window, and pending AI work was zero. One historical ambiguous network delivery remains an audit item rather than an automatic retry. Some employee chats still have valid Start-held jobs; their readiness is not assumed. The read-only Telegram health check confirmed the intended bot, no webhook and no webhook error.
+
+Final Apps Script HEAD matches all runtime sources; the completed private repair handler was removed and version 13 saved. Time-driven triggers continue using HEAD without a new public deployment.
+
 ## 27 October newsletter false-positive correction
 
 The owner reported a Malwarebytes cybersecurity newsletter generating unanswered-mail reminders. Read-only inspection covered 56 incoming copies across all eight mailboxes over the preceding 12 hours. The cause was the truncation fallback unconditionally turning a negative AI decision into `requires_reply=true`, even when AI classified the message as marketing. A second observed CRM sending-domain/brand variant was outside the previous exact rule.

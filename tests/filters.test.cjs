@@ -27,6 +27,15 @@ test('reviewed exclusion requires exact sender and exact anchored template',()=>
  assert.equal(core.exclusion(message('info@example.org','New Lead (Example) was assigned to you Sales')),null);
  for(const subject of [123,true,new Date(),null])assert.doesNotThrow(()=>core.exclusion(message('info@example.org',subject),[rule]));
 });
+test('a manually reviewed acknowledgment can be excluded without suppressing a later question in the same thread',()=>{
+ const scoped={id:'reviewed_one',sender:'client@example.org',subjectPattern:'^Re: Appointment$',category:'other',reason:'Acknowledgment only',
+  messageId:'123456abcdef',mailbox:'shared@example.org'};
+ const source={...message('client@example.org','Re: Appointment'),id:'123456abcdef'};
+ assert.equal(core.exclusion(source,[scoped],'shared@example.org').id,'reviewed_one');
+ assert.equal(core.exclusion({...source,id:'123456abcdee'},[scoped],'shared@example.org'),null);
+ assert.equal(core.exclusion(source,[scoped],'different@example.org'),null);
+ assert.equal(core.exclusion(source,[scoped]),null);
+});
 test('an existing completed AI classification is superseded without spending tokens; sent receipts survive',()=>{
  const row={id:'email',status:'awaiting',aiStatus:'complete',category:'customer',summary:'previous',reason:'previous',mailbox:'sales@example.org',messageId:'m'};
  const jobs=['pending','waiting_start','sent','unknown'].map((status,i)=>({id:String(i),emailId:'email',status,telegramMessageId:i}));

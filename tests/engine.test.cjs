@@ -17,6 +17,20 @@ function fixture(){
   tables.Emails.push(row);
   return {app:ctx.WpApp,db,cfg,calls,tables,states,api,row,ctx};
 }
+test('closed expectations retire all unsent reservations, including held chats, without touching sent or unknown receipts',()=>{
+ const f=fixture();Object.assign(f.row,{status:'replied'});
+ for(const status of ['pending','waiting_start','sent','unknown'])f.tables.Reminders.push({id:status,emailId:f.row.id,mode:'production',status});
+ f.tables.Reminders.push({id:'other-mode',emailId:f.row.id,mode:'test',status:'pending'});
+ assert.equal(f.app.retireClosed(f.db,'production'),2);
+ assert.deepEqual(f.tables.Reminders.map(j=>j.status),['cancelled','cancelled','sent','unknown','pending']);
+ assert.equal(f.states['closedOutbox:waiting_start'].previousStatus,'waiting_start');assert.equal(f.app.retireClosed(f.db,'production'),0);
+});
+test('closed-queue repair preserves active mail and safely retires orphaned reservations',()=>{
+ const f=fixture();f.tables.Reminders.push({id:'active',emailId:f.row.id,mode:'production',status:'waiting_start'},
+  {id:'orphan',emailId:'missing',mode:'production',status:'pending'});
+ assert.equal(f.app.retireClosed(f.db,'production'),1);assert.equal(f.tables.Reminders[0].status,'waiting_start');
+ assert.equal(f.tables.Reminders[1].error,'CLOSED:missing');assert.equal(f.calls.length,0);
+});
 test('outbox reservation is idempotent and admins are not duplicated for PM',()=>{
   const f=fixture();f.app.queue(f.db,f.cfg,f.row,30,'production');f.app.queue(f.db,f.cfg,f.row,30,'production');
   assert.equal(f.tables.Reminders.length,4);

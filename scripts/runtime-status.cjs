@@ -1,6 +1,11 @@
 /* Read only this project's Cloud Logging; output operational counters, never mail or credentials. */
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {OAuth2Client}=require('google-auth-library');
+function logFilter(since,until){
+  // IAM/service audit entries do not carry bot results. Avoid paging through them and exhausting read quota.
+  return 'timestamp >= "'+since+'"'+(until?' AND timestamp <= "'+until+'"':'')+
+    ' AND (jsonPayload.message:* OR textPayload:* OR severity>=ERROR)';
+}
 async function main(){
   const cfg=JSON.parse(fs.readFileSync('.clasp.json','utf8'));
   if(cfg.projectId!=='wallpanels-gmail-control')throw Error('PROJECT_SCOPE');
@@ -11,11 +16,11 @@ async function main(){
   if(!Number.isFinite(hours)||hours<=0||hours>168||!Number.isInteger(maximum)||maximum<1||maximum>5000)throw Error('INVALID_LOG_WINDOW');
   const since=new Date(option('since')||Date.now()-hours*3600000).toISOString(),until=option('until');
   if(until && !Number.isFinite(Date.parse(until)))throw Error('INVALID_LOG_END');
-  const filter='timestamp >= "'+since+'"'+(until?' AND timestamp <= "'+new Date(until).toISOString()+'"':'');
+  const filter=logFilter(since,until?new Date(until).toISOString():null);
   const result=[];let pageToken;
   const allowed=['ok','mode','employees','mailboxes','gmailOk','gmailTotal','bot','ai','webhook','triggers','health',
     'monitoredMailboxes','syntheticStatus','deliveries','unsafeRecipients','monitorLastSuccess','updatesLastSuccess','errorCount','paused',
-    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed','acceptanceAudit','productionActivated','phase','admins','productionStatus','aiPending','aiRecovery','maintenance'];
+    'active','delivery','stage','synthetic','testAdmin','callbackAction','status','handled','view','test247','startedAt','dueAt','activated','stages','rejected','resumed','previousStatus','formatVersion','edited','editFailed','acceptanceAudit','productionActivated','phase','admins','productionStatus','aiPending','aiRecovery','maintenance','outboxRetired'];
   do{
     const response=await auth.request({url:'https://logging.googleapis.com/v2/entries:list',method:'POST',data:{
       resourceNames:['projects/'+cfg.projectId],filter:filter,orderBy:'timestamp desc',pageSize:100,pageToken}});
@@ -36,5 +41,6 @@ async function main(){
   if(process.argv.includes('--save'))fs.writeFileSync('.local/runtime-evidence.json',JSON.stringify(result,null,2)+'\n',{mode:0o600});
   console.log(JSON.stringify(result,null,2));
 }
-main().catch(e=>{console.error('RUNTIME_STATUS_FAILED',e.response?.status||'',
+module.exports={logFilter};
+if(require.main===module)main().catch(e=>{console.error('RUNTIME_STATUS_FAILED',e.response?.status||'',
   e.response?.data?.error==='invalid_grant'?'GOOGLE_REAUTH_REQUIRED':'');process.exitCode=1;});

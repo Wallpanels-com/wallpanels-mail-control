@@ -46,11 +46,12 @@ var WpCore = (function () {
     return !labels.some(function (l) {return ['SENT','DRAFT','SPAM','TRASH'].indexOf(l)>=0;}) &&
       !addresses(header(msg,'From')).some(function (a) {return ownAddresses.indexOf(a)>=0;});
   }
-  function exclusion(msg,rules) {
+  function exclusion(msg,rules,mailbox) {
     var from=addresses(header(msg,'From')),subject=String(header(msg,'Subject')||'').trim();
     return (rules||[]).find(function(rule){
       // An exact sender AND a reviewed subject template. Never block all info@/noreply@ mail.
-      return from.length===1 && from[0]===rule.sender && new RegExp(rule.subjectPattern,'i').test(subject);
+      return from.length===1 && from[0]===rule.sender && (!rule.messageId || rule.messageId===msg.id) &&
+        (!rule.mailbox || rule.mailbox===mailbox) && new RegExp(rule.subjectPattern,'i').test(subject);
     })||((from.length===1 && /^info\+[^@]+@mail\.msgsndr[a-z0-9]+\.com$/.test(from[0]) &&
       /^(?:New Lead|Missed Call) \([^\r\n()]{1,100}\) (?:was )?assigned to you [^\r\n?]{1,160}$/i.test(subject))?
       {id:'crm_assignment_template',category:'system',reason:'Автоуведомление CRM о назначении лида или звонка. Ответ на это письмо не требуется.'}:null);
